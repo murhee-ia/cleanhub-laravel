@@ -27,12 +27,30 @@ jobs:
           coverage: none
 
       - name: Setup Node
+        if: ${{ hashFiles('package.json') != '' }}
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
 
       - name: Setup Application
-        run: composer setup
+        run: |
+          composer install --no-interaction --prefer-dist --optimize-autoloader
+          cp .env.example .env
+          php artisan key:generate
+          php artisan migrate --force
+
+      - name: Build Frontend Assets
+        if: ${{ hashFiles('package.json') != '' }}
+        run: |
+          npm install
+          npm run build
+
+      - name: Run Frontend Checks
+        if: ${{ hashFiles('package.json') != '' }}
+        run: |
+          npm run lint:check
+          npm run format:check
+          npm run types:check
 
       - name: Run CI Checks
-        run: composer ci:check
+        run: composer test
