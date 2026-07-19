@@ -20,7 +20,7 @@ return [
     // TODO(phase-11): restrict to the real frontend origin(s) before production.
     // Dev uses the Vite dev server at http://localhost:5173; '*' is a temporary
     // convenience for local development only and MUST NOT ship to production.
-    'allowed_origins' => ['*'],
+    'allowed_origins' => ['*', 'http://localhost:5173', 'http://127.0.0.1:5173'],
 
     'allowed_origins_patterns' => [],
 
