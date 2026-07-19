@@ -1,8 +1,29 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
+use App\Http\Controllers\Api\V1\Auth\LoginController;
+use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
+use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Api\V1\Auth\RegisterController;
+use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
+    Route::prefix('auth')->group(function (): void {
+        Route::post('register', [RegisterController::class, 'store']);
+        Route::post('login', [LoginController::class, 'store']);
+        Route::post('forgot-password', [PasswordResetLinkController::class, 'store']);
+        Route::post('reset-password', [NewPasswordController::class, 'store']);
+        Route::get('verify-email/{id}/{hash}', VerifyEmailController::class)
+            ->middleware('signed')
+            ->name('verification.verify');
+
+        Route::middleware('auth:sanctum')->group(function (): void {
+            Route::post('logout', [LoginController::class, 'destroy']);
+            Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store']);
+        });
+    });
+
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
 });
