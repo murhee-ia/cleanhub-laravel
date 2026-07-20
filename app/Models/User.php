@@ -9,6 +9,7 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -24,6 +25,8 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string|null $remember_token
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property-read CleanerProfile|null $cleanerProfile
+ * @property-read EmployerProfile|null $employerProfile
  */
 #[Fillable(['name', 'email', 'role', 'password'])]
 #[Hidden(['password', 'remember_token'])]
@@ -69,5 +72,21 @@ class User extends Authenticatable implements MustVerifyEmail
     public function sendEmailVerificationNotification(): void
     {
         $this->notify(new QueuedVerifyEmail);
+    }
+
+    /**
+     * @return HasOne<CleanerProfile, $this>
+     */
+    public function cleanerProfile(): HasOne
+    {
+        return $this->hasOne(CleanerProfile::class);
+    }
+
+    /**
+     * @return HasOne<EmployerProfile, $this>
+     */
+    public function employerProfile(): HasOne
+    {
+        return $this->hasOne(EmployerProfile::class);
     }
 }
