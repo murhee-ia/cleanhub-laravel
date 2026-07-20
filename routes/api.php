@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
+use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +25,8 @@ Route::prefix('v1')->group(function (): void {
             Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store']);
         });
     });
+
+    Route::get('cleaning-job-categories', [CleaningJobCategoryController::class, 'index']);
 
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
 });
