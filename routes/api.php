@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
+use App\Http\Controllers\Api\V1\ProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -27,6 +28,11 @@ Route::prefix('v1')->group(function (): void {
     });
 
     Route::get('cleaning-job-categories', [CleaningJobCategoryController::class, 'index']);
+
+    Route::middleware('auth:sanctum')->group(function (): void {
+        Route::get('profile', [ProfileController::class, 'show']);
+        Route::patch('profile', [ProfileController::class, 'update']);
+    });
 
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
 });
