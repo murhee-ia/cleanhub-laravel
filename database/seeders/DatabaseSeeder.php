@@ -14,6 +14,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->call(AdminUserSeeder::class);
+        $this->call([
+            AdminUserSeeder::class,
+            CleaningJobCategorySeeder::class,
+        ]);
+
+        if (! app()->environment('production')) {
+            $this->call(DemoProfileSeeder::class);
+        }
     }
 }
