@@ -24,9 +24,13 @@ class MaxWords implements ValidationRule
             return;
         }
 
-        $wordCount = count(preg_split('/\s+/', trim($value), -1, PREG_SPLIT_NO_EMPTY));
+        $words = preg_split('/\s+/', trim($value), -1, PREG_SPLIT_NO_EMPTY);
 
-        if ($wordCount > $this->max) {
+        if ($words === false) {
+            return;
+        }
+
+        if (count($words) > $this->max) {
             $fail("The :attribute may not be longer than {$this->max} words.");
         }
     }

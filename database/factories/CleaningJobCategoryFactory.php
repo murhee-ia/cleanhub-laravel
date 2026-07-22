@@ -16,7 +16,7 @@ class CleaningJobCategoryFactory extends Factory
      */
     public function definition(): array
     {
-        $name = fake()->unique()->words(2, true);
+        $name = fake()->unique()->word();
 
         return [
             'name' => Str::title($name),

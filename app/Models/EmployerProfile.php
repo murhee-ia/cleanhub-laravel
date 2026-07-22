@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $address
  * @property string|null $about
  * @property string|null $photo_path
- * @property array<int, string>|null $documents
+ * @property array<int, array{name: string, path: string}>|null $documents
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read User $user

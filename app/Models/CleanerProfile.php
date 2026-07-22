@@ -19,7 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $country
  * @property string|null $city
  * @property array<int, string>|null $languages
- * @property array<int, string>|null $documents
+ * @property array<int, array{name: string, path: string}>|null $documents
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read User $user

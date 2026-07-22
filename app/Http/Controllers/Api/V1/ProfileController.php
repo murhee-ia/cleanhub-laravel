@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class ProfileController extends Controller
@@ -57,7 +58,7 @@ class ProfileController extends Controller
         $profile->fill($request->safe()->only(['bio', 'country', 'city', 'languages']));
 
         if ($request->hasFile('photo')) {
-            $profile->photo_path = $request->file('photo')->store('cleaner-photos', 'public');
+            $profile->photo_path = $this->storeOrFail($request->file('photo'), 'cleaner-photos');
         }
 
         if ($request->hasFile('documents')) {
@@ -90,7 +91,7 @@ class ProfileController extends Controller
         ]));
 
         if ($request->hasFile('photo')) {
-            $profile->photo_path = $request->file('photo')->store('employer-photos', 'public');
+            $profile->photo_path = $this->storeOrFail($request->file('photo'), 'employer-photos');
         }
 
         if ($request->hasFile('documents')) {
@@ -114,10 +115,25 @@ class ProfileController extends Controller
     {
         $stored = array_map(fn (UploadedFile $file): array => [
             'name' => $file->getClientOriginalName(),
-            'path' => $file->store($directory, 'public'),
+            'path' => $this->storeOrFail($file, $directory),
         ], $files);
 
         return array_merge($profile->documents ?? [], $stored);
+    }
+
+    /**
+     * Store an uploaded file on the public disk, failing fast if the write
+     * does not succeed (rather than persisting a `false` path).
+     */
+    protected function storeOrFail(UploadedFile $file, string $directory): string
+    {
+        $path = $file->store($directory, 'public');
+
+        if ($path === false) {
+            throw new RuntimeException("Failed to store uploaded file in [{$directory}].");
+        }
+
+        return $path;
     }
 
     protected function cleanerProfile(User $user): CleanerProfileResource
