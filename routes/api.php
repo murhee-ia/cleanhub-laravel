@@ -41,6 +41,8 @@ Route::prefix('v1')->group(function (): void {
 
         Route::get('cleaners/{id}', [PublicProfileController::class, 'cleaner']);
         Route::get('employers/{id}', [PublicProfileController::class, 'employer']);
+        Route::get('employers/{id}/cleaning-job-posts', [CleaningJobPostController::class, 'forEmployer'])
+            ->whereNumber('id');
 
         Route::get('cleaning-job-posts/mine', [CleaningJobPostController::class, 'mine']);
         Route::post('cleaning-job-posts', [CleaningJobPostController::class, 'store']);

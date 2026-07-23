@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\JobPostStatus;
 use App\Enums\JobPostVisibility;
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCleaningJobPostRequest;
 use App\Http\Requests\UpdateCleaningJobPostRequest;
 use App\Http\Resources\CleaningJobPostResource;
 use App\Models\CleaningJobPost;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -104,6 +106,27 @@ class CleaningJobPostController extends Controller
     {
         $posts = CleaningJobPost::query()
             ->where('employer_id', $request->user()->id)
+            ->with(['employer', 'category'])
+            ->latest()
+            ->paginate(15);
+
+        return CleaningJobPostResource::collection($posts);
+    }
+
+    /**
+     * List a given employer's public job posts for their profile page: every
+     * published post across open/reviewing/closed/completed. Drafts (not yet
+     * public) and removed (hidden) posts are excluded. Any authenticated user
+     * may view this.
+     */
+    public function forEmployer(int $id): AnonymousResourceCollection
+    {
+        $employer = User::where('role', UserRole::Employer)->findOrFail($id);
+
+        $posts = CleaningJobPost::query()
+            ->where('employer_id', $employer->id)
+            ->published()
+            ->where('status', '!=', JobPostStatus::Removed->value)
             ->with(['employer', 'category'])
             ->latest()
             ->paginate(15);
