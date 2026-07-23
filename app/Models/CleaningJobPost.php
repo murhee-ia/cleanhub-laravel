@@ -66,6 +66,18 @@ class CleaningJobPost extends Model
     use HasFactory, SoftDeletes;
 
     /**
+     * Mirror the database column defaults so a new instance has correct values
+     * before it is saved.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'visibility' => 'draft',
+        'status' => 'open',
+        'cleaners_needed' => 1,
+    ];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

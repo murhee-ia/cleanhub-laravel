@@ -41,6 +41,13 @@ Route::prefix('v1')->group(function (): void {
 
         Route::get('cleaners/{id}', [PublicProfileController::class, 'cleaner']);
         Route::get('employers/{id}', [PublicProfileController::class, 'employer']);
+
+        Route::get('cleaning-job-posts/mine', [CleaningJobPostController::class, 'mine']);
+        Route::post('cleaning-job-posts', [CleaningJobPostController::class, 'store']);
+        Route::patch('cleaning-job-posts/{cleaningJobPost}', [CleaningJobPostController::class, 'update'])
+            ->whereNumber('cleaningJobPost');
+        Route::delete('cleaning-job-posts/{cleaningJobPost}', [CleaningJobPostController::class, 'destroy'])
+            ->whereNumber('cleaningJobPost');
     });
 
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
