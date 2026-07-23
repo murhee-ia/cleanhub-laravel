@@ -16,14 +16,19 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class CleaningJobPostController extends Controller
 {
     /**
-     * Browse published, open job posts. Guest-accessible; supports keyword
-     * search, filtering, sorting, and pagination.
+     * Browse published job posts. Guest-accessible; supports keyword search,
+     * filtering, sorting, and pagination. By default only `open` posts are
+     * returned; any authenticated non-cleaner (employer/moderator/admin) may
+     * filter the whole market by any status, including `removed`. Cleaners and
+     * guests cannot filter by status at all, so removed content stays off
+     * limits to them.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -33,13 +38,27 @@ class CleaningJobPostController extends Controller
             'country' => ['sometimes', 'string', 'max:255'],
             'city' => ['sometimes', 'string', 'max:255'],
             'schedule_date' => ['sometimes', 'date'],
+            'status' => ['sometimes', Rule::enum(JobPostStatus::class)],
             'sort' => ['sometimes', Rule::in(['newest', 'soonest', 'high_pay', 'top_employer'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
         ]);
 
+        $viewer = $request->user('sanctum');
+        $canFilterByStatus = $viewer !== null && ! $viewer->isCleaner();
+
+        if (isset($validated['status']) && ! $canFilterByStatus) {
+            throw ValidationException::withMessages([
+                'status' => 'Filtering job posts by status is not available for this account.',
+            ]);
+        }
+
         $query = CleaningJobPost::query()
             ->published()
-            ->open()
+            ->when(
+                isset($validated['status']),
+                fn (Builder $q) => $q->where('status', $validated['status']),
+                fn (Builder $q) => $q->open(),
+            )
             ->with(['employer', 'category'])
             ->when(
                 isset($validated['search']),

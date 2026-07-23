@@ -4,6 +4,7 @@ use App\Enums\JobPostStatus;
 use App\Models\CleaningJobCategory;
 use App\Models\CleaningJobPost;
 use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 
 test('guests can browse published open posts in a paginated envelope', function () {
     CleaningJobPost::factory()->count(3)->create();
@@ -70,4 +71,73 @@ test('per_page controls pagination size', function () {
 test('an invalid sort value is rejected', function () {
     $this->getJson('/api/v1/cleaning-job-posts?sort=cheapest')
         ->assertStatus(422)->assertJsonValidationErrors('sort');
+});
+
+test('an authenticated employer can filter the market by other statuses', function () {
+    CleaningJobPost::factory()->create(); // open
+    CleaningJobPost::factory()->status(JobPostStatus::Completed)->create();
+
+    Sanctum::actingAs(User::factory()->employer()->create());
+
+    $this->getJson('/api/v1/cleaning-job-posts?status=completed')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.status', 'completed');
+});
+
+test('a moderator can also filter the market by status', function () {
+    CleaningJobPost::factory()->status(JobPostStatus::Closed)->create();
+
+    Sanctum::actingAs(User::factory()->moderator()->create());
+
+    $this->getJson('/api/v1/cleaning-job-posts?status=closed')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.status', 'closed');
+});
+
+test('a guest cannot use the status filter', function () {
+    CleaningJobPost::factory()->status(JobPostStatus::Closed)->create();
+
+    $this->getJson('/api/v1/cleaning-job-posts?status=closed')
+        ->assertStatus(422)->assertJsonValidationErrors('status');
+});
+
+test('a cleaner cannot use the status filter on browse', function () {
+    Sanctum::actingAs(User::factory()->cleaner()->create());
+
+    $this->getJson('/api/v1/cleaning-job-posts?status=closed')
+        ->assertStatus(422)->assertJsonValidationErrors('status');
+});
+
+test('a non-cleaner can filter by removed status', function () {
+    CleaningJobPost::factory()->status(JobPostStatus::Removed)->create();
+
+    Sanctum::actingAs(User::factory()->employer()->create());
+
+    $this->getJson('/api/v1/cleaning-job-posts?status=removed')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.status', 'removed');
+});
+
+test('a cleaner cannot see removed posts through the filter', function () {
+    CleaningJobPost::factory()->status(JobPostStatus::Removed)->create();
+
+    Sanctum::actingAs(User::factory()->cleaner()->create());
+
+    $this->getJson('/api/v1/cleaning-job-posts?status=removed')
+        ->assertStatus(422)->assertJsonValidationErrors('status');
+});
+
+test('everyone still sees only open posts by default', function () {
+    CleaningJobPost::factory()->create(); // open
+    CleaningJobPost::factory()->status(JobPostStatus::Closed)->create();
+
+    Sanctum::actingAs(User::factory()->employer()->create());
+
+    $this->getJson('/api/v1/cleaning-job-posts')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.status', 'open');
 });
