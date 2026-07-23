@@ -6,6 +6,7 @@ use App\Enums\JobPostStatus;
 use App\Enums\JobPostVisibility;
 use Database\Factories\CleaningJobPostFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -94,5 +95,21 @@ class CleaningJobPost extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(CleaningJobCategory::class, 'cleaning_job_category_id');
+    }
+
+    /**
+     * @param  Builder<CleaningJobPost>  $query
+     */
+    public function scopePublished(Builder $query): void
+    {
+        $query->where('visibility', JobPostVisibility::Published);
+    }
+
+    /**
+     * @param  Builder<CleaningJobPost>  $query
+     */
+    public function scopeOpen(Builder $query): void
+    {
+        $query->where('status', JobPostStatus::Open);
     }
 }

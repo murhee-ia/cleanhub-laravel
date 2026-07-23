@@ -31,6 +31,7 @@ Route::prefix('v1')->group(function (): void {
 
     Route::get('cleaning-job-categories', [CleaningJobCategoryController::class, 'index']);
 
+    Route::get('cleaning-job-posts', [CleaningJobPostController::class, 'index']);
     Route::get('cleaning-job-posts/{id}', [CleaningJobPostController::class, 'show'])
         ->whereNumber('id');
 
