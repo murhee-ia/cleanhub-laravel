@@ -20,7 +20,10 @@ class DatabaseSeeder extends Seeder
         ]);
 
         if (! app()->environment('production')) {
-            $this->call(DemoProfileSeeder::class);
+            $this->call([
+                DemoProfileSeeder::class,
+                DemoJobPostSeeder::class,
+            ]);
         }
     }
 }
