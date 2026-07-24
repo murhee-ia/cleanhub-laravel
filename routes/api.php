@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
+use App\Http\Controllers\Api\V1\CleaningJobPostController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicProfileController;
 use Illuminate\Http\Request;
@@ -30,12 +31,25 @@ Route::prefix('v1')->group(function (): void {
 
     Route::get('cleaning-job-categories', [CleaningJobCategoryController::class, 'index']);
 
+    Route::get('cleaning-job-posts', [CleaningJobPostController::class, 'index']);
+    Route::get('cleaning-job-posts/{id}', [CleaningJobPostController::class, 'show'])
+        ->whereNumber('id');
+
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('profile', [ProfileController::class, 'show']);
         Route::patch('profile', [ProfileController::class, 'update']);
 
         Route::get('cleaners/{id}', [PublicProfileController::class, 'cleaner']);
         Route::get('employers/{id}', [PublicProfileController::class, 'employer']);
+        Route::get('employers/{id}/cleaning-job-posts', [CleaningJobPostController::class, 'forEmployer'])
+            ->whereNumber('id');
+
+        Route::get('cleaning-job-posts/mine', [CleaningJobPostController::class, 'mine']);
+        Route::post('cleaning-job-posts', [CleaningJobPostController::class, 'store']);
+        Route::patch('cleaning-job-posts/{cleaningJobPost}', [CleaningJobPostController::class, 'update'])
+            ->whereNumber('cleaningJobPost');
+        Route::delete('cleaning-job-posts/{cleaningJobPost}', [CleaningJobPostController::class, 'destroy'])
+            ->whereNumber('cleaningJobPost');
     });
 
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
