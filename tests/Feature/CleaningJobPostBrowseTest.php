@@ -138,3 +138,42 @@ test('everyone still sees only open posts by default', function () {
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.status', 'open');
 });
+
+test('a searching cleaner finds published posts of any non-removed status', function () {
+    $reviewing = CleaningJobPost::factory()->status(JobPostStatus::Reviewing)->create(['title' => 'Warehouse Deep Clean']);
+    $closed = CleaningJobPost::factory()->status(JobPostStatus::Closed)->create(['title' => 'Warehouse Night Shift']);
+    $completed = CleaningJobPost::factory()->status(JobPostStatus::Completed)->create(['title' => 'Warehouse Restock Clean']);
+    $removed = CleaningJobPost::factory()->status(JobPostStatus::Removed)->create(['title' => 'Warehouse Flagged Post']);
+
+    Sanctum::actingAs(User::factory()->cleaner()->create());
+
+    $response = $this->getJson('/api/v1/cleaning-job-posts?search=Warehouse')
+        ->assertOk()
+        ->assertJsonCount(3, 'data');
+
+    $ids = collect($response->json('data'))->pluck('id');
+    expect($ids)->toContain($reviewing->id, $closed->id, $completed->id)
+        ->not->toContain($removed->id);
+});
+
+test('a guest searching does not see non-open posts', function () {
+    CleaningJobPost::factory()->status(JobPostStatus::Reviewing)->create(['title' => 'Warehouse Deep Clean']);
+    CleaningJobPost::factory()->status(JobPostStatus::Closed)->create(['title' => 'Warehouse Night Shift']);
+
+    $this->getJson('/api/v1/cleaning-job-posts?search=Warehouse')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});
+
+test('a cleaner without a search param still sees only open posts', function () {
+    CleaningJobPost::factory()->create(); // open
+    CleaningJobPost::factory()->status(JobPostStatus::Reviewing)->create();
+    CleaningJobPost::factory()->status(JobPostStatus::Closed)->create();
+
+    Sanctum::actingAs(User::factory()->cleaner()->create());
+
+    $this->getJson('/api/v1/cleaning-job-posts')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.status', 'open');
+});

@@ -124,4 +124,12 @@ class CleaningJobPost extends Model
     {
         $query->where('status', JobPostStatus::Open);
     }
+
+    /**
+     * @param  Builder<CleaningJobPost>  $query
+     */
+    public function scopeNotRemoved(Builder $query): void
+    {
+        $query->where('status', '!=', JobPostStatus::Removed);
+    }
 }

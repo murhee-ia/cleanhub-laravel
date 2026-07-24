@@ -54,12 +54,19 @@ class CleaningJobPostController extends Controller
             ]);
         }
 
+        // A searching cleaner sees published posts of any status except removed,
+        // so a keyword can surface reviewing/closed/completed posts; the plain
+        // feed and guests stay open-only.
+        $searchingCleaner = isset($validated['search'])
+            && $viewer !== null
+            && $viewer->isCleaner();
+
         $query = CleaningJobPost::query()
             ->published()
             ->when(
                 isset($validated['status']),
                 fn (Builder $q) => $q->where('status', $validated['status']),
-                fn (Builder $q) => $q->open(),
+                fn (Builder $q) => $searchingCleaner ? $q->notRemoved() : $q->open(),
             )
             ->with(['employer', 'category'])
             ->when(
