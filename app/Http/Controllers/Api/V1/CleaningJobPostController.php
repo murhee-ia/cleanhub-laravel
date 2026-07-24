@@ -106,17 +106,40 @@ class CleaningJobPostController extends Controller
 
     /**
      * List the authenticated employer's own job posts (every visibility and
-     * status) for their dashboard.
+     * status) for their dashboard. Supports keyword search, status and schedule
+     * filtering, and sorting — all scoped to the employer's own posts, so any
+     * status (including `removed`) is filterable here.
      */
     public function mine(Request $request): AnonymousResourceCollection
     {
-        $posts = CleaningJobPost::query()
+        $validated = $request->validate([
+            'search' => ['sometimes', 'string', 'max:255'],
+            'status' => ['sometimes', Rule::enum(JobPostStatus::class)],
+            'schedule_date' => ['sometimes', 'date'],
+            'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'soonest'])],
+        ]);
+
+        $query = CleaningJobPost::query()
             ->where('employer_id', $request->user()->id)
             ->with(['employer', 'category'])
-            ->latest()
-            ->paginate(15);
+            ->when(
+                isset($validated['search']),
+                fn (Builder $builder) => $builder->where(function (Builder $inner) use ($validated): void {
+                    $term = '%'.$validated['search'].'%';
+                    $inner->where('title', 'like', $term)
+                        ->orWhere('description', 'like', $term);
+                }),
+            )
+            ->when(isset($validated['status']), fn (Builder $q) => $q->where('status', $validated['status']))
+            ->when(isset($validated['schedule_date']), fn (Builder $q) => $q->whereDate('schedule_date', $validated['schedule_date']));
 
-        return CleaningJobPostResource::collection($posts);
+        match ($validated['sort'] ?? 'newest') {
+            'oldest' => $query->orderBy('created_at'),
+            'soonest' => $query->orderBy('schedule_date'),
+            default => $query->orderByDesc('created_at'),
+        };
+
+        return CleaningJobPostResource::collection($query->paginate(15));
     }
 
     /**
