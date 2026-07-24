@@ -41,7 +41,7 @@ class CleaningJobPostController extends Controller
             'city' => ['sometimes', 'string', 'max:255'],
             'schedule_date' => ['sometimes', 'date'],
             'status' => ['sometimes', Rule::enum(JobPostStatus::class)],
-            'sort' => ['sometimes', Rule::in(['newest', 'soonest', 'high_pay', 'top_employer'])],
+            'sort' => ['sometimes', Rule::in(['newest', 'soonest', 'top_employer'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
         ]);
 
@@ -90,7 +90,6 @@ class CleaningJobPostController extends Controller
     {
         match ($sort) {
             'soonest' => $query->orderBy('schedule_date'),
-            'high_pay' => $query->orderByDesc('pay_amount'),
             // top_employer sorts by employer rating once Phase 7 lands; until
             // then there is no rating, so it falls back to newest.
             'top_employer' => $query->orderByDesc('created_at'),

@@ -47,15 +47,12 @@ test('posts can be filtered by category, country, and city', function () {
         ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.city', 'Tokyo');
 });
 
-test('posts can be sorted by soonest schedule and highest pay', function () {
-    $soon = CleaningJobPost::factory()->create(['schedule_date' => now()->addDays(2)->toDateString(), 'pay_amount' => 10]);
-    $later = CleaningJobPost::factory()->create(['schedule_date' => now()->addDays(30)->toDateString(), 'pay_amount' => 500]);
+test('posts can be sorted by soonest schedule', function () {
+    $soon = CleaningJobPost::factory()->create(['schedule_date' => now()->addDays(2)->toDateString()]);
+    CleaningJobPost::factory()->create(['schedule_date' => now()->addDays(30)->toDateString()]);
 
     $this->getJson('/api/v1/cleaning-job-posts?sort=soonest')
         ->assertOk()->assertJsonPath('data.0.id', $soon->id);
-
-    $this->getJson('/api/v1/cleaning-job-posts?sort=high_pay')
-        ->assertOk()->assertJsonPath('data.0.id', $later->id);
 });
 
 test('per_page controls pagination size', function () {
