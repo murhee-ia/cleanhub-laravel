@@ -19,6 +19,7 @@ class CleaningJobPostResource extends JsonResource
     {
         $viewer = $request->user('sanctum');
         $isOwner = $viewer !== null && $viewer->id === $this->employer_id;
+        $viewerIsCleaner = $viewer !== null && $viewer->isCleaner();
 
         return [
             'id' => $this->id,
@@ -50,6 +51,7 @@ class CleaningJobPostResource extends JsonResource
             'pay_currency' => $this->pay_currency,
             'media' => $this->mapMedia(),
             'applications_count' => $this->when($isOwner, 0),
+            'is_saved' => $this->when($viewerIsCleaner, fn (): bool => (bool) $this->getAttribute('is_saved_by_viewer')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
