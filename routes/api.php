@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
 use App\Http\Controllers\Api\V1\CleaningJobPostController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicProfileController;
+use App\Http\Controllers\Api\V1\SavedJobController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -49,6 +50,11 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('cleaning-job-posts/{cleaningJobPost}', [CleaningJobPostController::class, 'update'])
             ->whereNumber('cleaningJobPost');
         Route::delete('cleaning-job-posts/{cleaningJobPost}', [CleaningJobPostController::class, 'destroy'])
+            ->whereNumber('cleaningJobPost');
+
+        Route::get('saved-jobs', [SavedJobController::class, 'index']);
+        Route::post('saved-jobs', [SavedJobController::class, 'store']);
+        Route::delete('saved-jobs/{cleaningJobPost}', [SavedJobController::class, 'destroy'])
             ->whereNumber('cleaningJobPost');
     });
 
