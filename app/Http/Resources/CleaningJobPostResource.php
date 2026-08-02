@@ -50,8 +50,13 @@ class CleaningJobPostResource extends JsonResource
             'pay_amount' => $this->pay_amount === null ? null : (float) $this->pay_amount,
             'pay_currency' => $this->pay_currency,
             'media' => $this->mapMedia(),
-            'applications_count' => $this->when($isOwner, 0),
+            'applications_count' => $this->when($isOwner, fn (): int => (int) $this->getAttribute('applications_count')),
             'is_saved' => $this->when($viewerIsCleaner, fn (): bool => (bool) $this->getAttribute('is_saved_by_viewer')),
+            'has_applied' => $this->when($viewerIsCleaner, fn (): bool => (bool) $this->getAttribute('has_applied_by_viewer')),
+            'application_status' => $this->when(
+                $viewerIsCleaner && (bool) $this->getAttribute('has_applied_by_viewer'),
+                fn (): ?string => $this->getAttribute('viewer_application_status_raw'),
+            ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
