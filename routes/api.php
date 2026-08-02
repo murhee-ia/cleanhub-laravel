@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\ApplicationController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
@@ -56,6 +57,11 @@ Route::prefix('v1')->group(function (): void {
         Route::post('saved-jobs', [SavedJobController::class, 'store']);
         Route::delete('saved-jobs/{cleaningJobPost}', [SavedJobController::class, 'destroy'])
             ->whereNumber('cleaningJobPost');
+
+        Route::get('applications', [ApplicationController::class, 'index']);
+        Route::post('applications', [ApplicationController::class, 'store']);
+        Route::delete('applications/{application}', [ApplicationController::class, 'destroy'])
+            ->whereNumber('application');
     });
 
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
