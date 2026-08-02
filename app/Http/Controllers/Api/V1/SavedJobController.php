@@ -2,16 +2,20 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\ApplicationStatus;
 use App\Enums\JobPostStatus;
 use App\Enums\JobPostVisibility;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreSavedJobRequest;
 use App\Http\Resources\SavedJobResource;
+use App\Models\Application;
 use App\Models\CleaningJobPost;
 use App\Models\SavedJob;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
@@ -33,11 +37,7 @@ class SavedJobController extends Controller
             ->latest()
             ->paginate(15);
 
-        // Every job in the cleaner's own list is saved by them by definition,
-        // so set the flag the embedded job resource reads without a subquery.
-        $saved->getCollection()->each(
-            fn (SavedJob $savedJob) => $savedJob->cleaningJobPost->setAttribute('is_saved_by_viewer', true)
-        );
+        $this->attachViewerFlags($saved->getCollection(), $request->user());
 
         return SavedJobResource::collection($saved);
     }
@@ -74,9 +74,34 @@ class SavedJobController extends Controller
         ]);
 
         $savedJob->load(['cleaningJobPost.employer', 'cleaningJobPost.category']);
-        $savedJob->cleaningJobPost->setAttribute('is_saved_by_viewer', true);
+
+        $this->attachViewerFlags(new Collection([$savedJob]), $request->user());
 
         return (new SavedJobResource($savedJob))->response()->setStatusCode(201);
+    }
+
+    /**
+     * The embedded job posts are loaded through the saved row, so the viewer
+     * flags CleaningJobPostResource reads are not set by a query scope here.
+     * Every job in this list is saved by the viewer by definition; applied
+     * state costs one extra lookup for the whole page rather than one per row.
+     *
+     * @param  Collection<int, SavedJob>  $savedJobs
+     */
+    protected function attachViewerFlags(Collection $savedJobs, User $viewer): void
+    {
+        $applicationStatuses = Application::query()
+            ->where('user_id', $viewer->id)
+            ->whereIn('cleaning_job_post_id', $savedJobs->pluck('cleaning_job_post_id'))
+            ->pluck('status', 'cleaning_job_post_id')
+            ->map(fn (ApplicationStatus $status): string => $status->value);
+
+        $savedJobs->each(function (SavedJob $savedJob) use ($applicationStatuses): void {
+            $savedJob->cleaningJobPost
+                ->setAttribute('is_saved_by_viewer', true)
+                ->setAttribute('has_applied_by_viewer', $applicationStatuses->has($savedJob->cleaning_job_post_id))
+                ->setAttribute('viewer_application_status_raw', $applicationStatuses->get($savedJob->cleaning_job_post_id));
+        });
     }
 
     /**
