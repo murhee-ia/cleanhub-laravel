@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
 use App\Http\Controllers\Api\V1\CleaningJobPostController;
+use App\Http\Controllers\Api\V1\JobApplicantController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicProfileController;
 use App\Http\Controllers\Api\V1\SavedJobController;
@@ -61,6 +62,19 @@ Route::prefix('v1')->group(function (): void {
         Route::get('applications', [ApplicationController::class, 'index']);
         Route::post('applications', [ApplicationController::class, 'store']);
         Route::delete('applications/{application}', [ApplicationController::class, 'destroy'])
+            ->whereNumber('application');
+
+        // `/detail` keeps the single-application read from colliding with the
+        // flat GET /applications collection above.
+        Route::get('cleaning-job-posts/{cleaningJobPost}/applications', [JobApplicantController::class, 'index'])
+            ->whereNumber('cleaningJobPost');
+        Route::get('applications/{application}/detail', [JobApplicantController::class, 'show'])
+            ->whereNumber('application');
+        Route::patch('applications/{application}/accept', [JobApplicantController::class, 'accept'])
+            ->whereNumber('application');
+        Route::patch('applications/{application}/reject', [JobApplicantController::class, 'reject'])
+            ->whereNumber('application');
+        Route::patch('applications/{application}/note', [JobApplicantController::class, 'note'])
             ->whereNumber('application');
     });
 
