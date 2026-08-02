@@ -69,6 +69,7 @@ class CleaningJobPostController extends Controller
                 fn (Builder $q) => $searchingCleaner ? $q->notRemoved() : $q->open(),
             )
             ->with(['employer', 'category'])
+            ->withViewerSaved($viewer)
             ->when(
                 isset($validated['search']),
                 fn (Builder $builder) => $builder->where(function (Builder $inner) use ($validated): void {
@@ -148,7 +149,7 @@ class CleaningJobPostController extends Controller
      * public) and removed (hidden) posts are excluded. Any authenticated user
      * may view this.
      */
-    public function forEmployer(int $id): AnonymousResourceCollection
+    public function forEmployer(Request $request, int $id): AnonymousResourceCollection
     {
         $employer = User::where('role', UserRole::Employer)->findOrFail($id);
 
@@ -157,6 +158,7 @@ class CleaningJobPostController extends Controller
             ->published()
             ->where('status', '!=', JobPostStatus::Removed->value)
             ->with(['employer', 'category'])
+            ->withViewerSaved($request->user('sanctum'))
             ->latest()
             ->paginate(15);
 
@@ -218,9 +220,12 @@ class CleaningJobPostController extends Controller
      */
     public function show(Request $request, int $id): CleaningJobPostResource
     {
-        $post = CleaningJobPost::with(['employer', 'category'])->findOrFail($id);
-
         $viewer = $request->user('sanctum');
+
+        $post = CleaningJobPost::with(['employer', 'category'])
+            ->withViewerSaved($viewer)
+            ->findOrFail($id);
+
         $isOwner = $viewer !== null && $viewer->id === $post->employer_id;
 
         $isPubliclyVisible = $post->visibility === JobPostVisibility::Published

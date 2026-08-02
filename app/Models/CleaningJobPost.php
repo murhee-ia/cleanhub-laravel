@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -107,6 +108,33 @@ class CleaningJobPost extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(CleaningJobCategory::class, 'cleaning_job_category_id');
+    }
+
+    /**
+     * @return HasMany<SavedJob, $this>
+     */
+    public function savedJobs(): HasMany
+    {
+        return $this->hasMany(SavedJob::class);
+    }
+
+    /**
+     * Expose whether the given viewer (a cleaner) has saved each post as the
+     * `is_saved_by_viewer` attribute via a single existence subquery, so it
+     * costs no extra query per row on list endpoints. A no-op for guests and
+     * non-cleaners, who never see the flag.
+     *
+     * @param  Builder<CleaningJobPost>  $query
+     */
+    public function scopeWithViewerSaved(Builder $query, ?User $viewer): void
+    {
+        if ($viewer === null || ! $viewer->isCleaner()) {
+            return;
+        }
+
+        $query->withExists(['savedJobs as is_saved_by_viewer' => function (Builder $subQuery) use ($viewer): void {
+            $subQuery->where('user_id', $viewer->id);
+        }]);
     }
 
     /**
