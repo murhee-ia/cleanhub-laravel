@@ -47,6 +47,7 @@ class CleaningJobPostController extends Controller
 
         $viewer = $request->user('sanctum');
         $canFilterByStatus = $viewer !== null && ! $viewer->isCleaner();
+        $isCleaner = $viewer !== null && $viewer->isCleaner();
 
         if (isset($validated['status']) && ! $canFilterByStatus) {
             throw ValidationException::withMessages([
@@ -72,6 +73,14 @@ class CleaningJobPostController extends Controller
             ->withCount('applications')
             ->withViewerSaved($viewer)
             ->withViewerApplication($viewer)
+            // A cleaner has already acted on a job they applied to, so it drops
+            // out of their feed. Their applications list is where they track it.
+            // A keyword search is exhaustive though: looking a job up by name is
+            // a deliberate act, so applied jobs stay findable there.
+            ->when(
+                $isCleaner && ! isset($validated['search']),
+                fn (Builder $q) => $q->whereDoesntHave('applications', fn (Builder $a) => $a->where('user_id', $viewer->id)),
+            )
             ->when(
                 isset($validated['search']),
                 fn (Builder $builder) => $builder->where(function (Builder $inner) use ($validated): void {
