@@ -53,6 +53,30 @@ class ApplicationController extends Controller
     }
 
     /**
+     * The authenticated cleaner's accepted/completed applications, unpaginated,
+     * for the calendar view (spec 4.9). Per root CLAUDE.md, accepting an
+     * application is the only calendar trigger — there is no separate calendar
+     * table, this is just a scoped read of the same applications table sorted
+     * into schedule order.
+     */
+    public function calendar(Request $request): AnonymousResourceCollection
+    {
+        Gate::authorize('viewAny', Application::class);
+
+        $applications = Application::query()
+            ->where('user_id', $request->user()->id)
+            ->whereIn('status', [ApplicationStatus::Accepted, ApplicationStatus::Completed])
+            ->with(['cleaningJobPost.employer', 'cleaningJobPost.category'])
+            ->get()
+            ->sortBy(fn (Application $application): string => $application->cleaningJobPost->schedule_date->toDateString())
+            ->values();
+
+        $this->attachViewerFlags($applications, $request->user());
+
+        return ApplicationResource::collection($applications);
+    }
+
+    /**
      * Apply to an open, published job as the authenticated cleaner. The unique
      * (cleaning_job_post_id, user_id) index is the permanent guard against a
      * second application; the duplicate check here turns that into a readable

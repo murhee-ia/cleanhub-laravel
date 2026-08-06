@@ -60,6 +60,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('cleaningJobPost');
 
         Route::get('applications', [ApplicationController::class, 'index']);
+        Route::get('calendar', [ApplicationController::class, 'calendar']);
         Route::post('applications', [ApplicationController::class, 'store']);
         Route::delete('applications/{application}', [ApplicationController::class, 'destroy'])
             ->whereNumber('application');
