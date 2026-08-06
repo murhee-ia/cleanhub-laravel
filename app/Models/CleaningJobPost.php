@@ -119,6 +119,14 @@ class CleaningJobPost extends Model
     }
 
     /**
+     * @return HasMany<Application, $this>
+     */
+    public function applications(): HasMany
+    {
+        return $this->hasMany(Application::class);
+    }
+
+    /**
      * Expose whether the given viewer (a cleaner) has saved each post as the
      * `is_saved_by_viewer` attribute via a single existence subquery, so it
      * costs no extra query per row on list endpoints. A no-op for guests and
@@ -135,6 +143,31 @@ class CleaningJobPost extends Model
         $query->withExists(['savedJobs as is_saved_by_viewer' => function (Builder $subQuery) use ($viewer): void {
             $subQuery->where('user_id', $viewer->id);
         }]);
+    }
+
+    /**
+     * Expose whether the given viewer (a cleaner) has applied to each post, and
+     * the status of that application, as the `has_applied_by_viewer` and
+     * `viewer_application_status_raw` attributes. Same single-subquery approach
+     * as scopeWithViewerSaved, and a no-op for guests and non-cleaners. The MAX
+     * aggregate is safe because the unique (cleaning_job_post_id, user_id)
+     * constraint guarantees at most one matching row.
+     *
+     * @param  Builder<CleaningJobPost>  $query
+     */
+    public function scopeWithViewerApplication(Builder $query, ?User $viewer): void
+    {
+        if ($viewer === null || ! $viewer->isCleaner()) {
+            return;
+        }
+
+        $constrainToViewer = function (Builder $subQuery) use ($viewer): void {
+            $subQuery->where('user_id', $viewer->id);
+        };
+
+        $query
+            ->withExists(['applications as has_applied_by_viewer' => $constrainToViewer])
+            ->withMax(['applications as viewer_application_status_raw' => $constrainToViewer], 'status');
     }
 
     /**

@@ -69,7 +69,9 @@ class CleaningJobPostController extends Controller
                 fn (Builder $q) => $searchingCleaner ? $q->notRemoved() : $q->open(),
             )
             ->with(['employer', 'category'])
+            ->withCount('applications')
             ->withViewerSaved($viewer)
+            ->withViewerApplication($viewer)
             ->when(
                 isset($validated['search']),
                 fn (Builder $builder) => $builder->where(function (Builder $inner) use ($validated): void {
@@ -123,6 +125,7 @@ class CleaningJobPostController extends Controller
         $query = CleaningJobPost::query()
             ->where('employer_id', $request->user()->id)
             ->with(['employer', 'category'])
+            ->withCount('applications')
             ->when(
                 isset($validated['search']),
                 fn (Builder $builder) => $builder->where(function (Builder $inner) use ($validated): void {
@@ -158,7 +161,9 @@ class CleaningJobPostController extends Controller
             ->published()
             ->where('status', '!=', JobPostStatus::Removed->value)
             ->with(['employer', 'category'])
+            ->withCount('applications')
             ->withViewerSaved($request->user('sanctum'))
+            ->withViewerApplication($request->user('sanctum'))
             ->latest()
             ->paginate(15);
 
@@ -179,6 +184,7 @@ class CleaningJobPostController extends Controller
 
         $post->save();
         $post->load(['employer', 'category']);
+        $post->loadCount('applications');
 
         return (new CleaningJobPostResource($post))->response()->setStatusCode(201);
     }
@@ -197,6 +203,7 @@ class CleaningJobPostController extends Controller
 
         $cleaningJobPost->save();
         $cleaningJobPost->load(['employer', 'category']);
+        $cleaningJobPost->loadCount('applications');
 
         return new CleaningJobPostResource($cleaningJobPost);
     }
@@ -223,7 +230,9 @@ class CleaningJobPostController extends Controller
         $viewer = $request->user('sanctum');
 
         $post = CleaningJobPost::with(['employer', 'category'])
+            ->withCount('applications')
             ->withViewerSaved($viewer)
+            ->withViewerApplication($viewer)
             ->findOrFail($id);
 
         $isOwner = $viewer !== null && $viewer->id === $post->employer_id;
