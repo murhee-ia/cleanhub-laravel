@@ -160,7 +160,8 @@ class CleaningJobPostController extends Controller
      * List a given employer's public job posts for their profile page: every
      * published post across open/reviewing/closed/completed. Drafts (not yet
      * public) and removed (hidden) posts are excluded. Any authenticated user
-     * may view this.
+     * may view this, but an employer looking at their own profile is served by
+     * mine() instead — so no owner-only data (applications_count) is loaded here.
      */
     public function forEmployer(Request $request, int $id): AnonymousResourceCollection
     {
@@ -173,7 +174,6 @@ class CleaningJobPostController extends Controller
             ->published()
             ->where('status', '!=', JobPostStatus::Removed->value)
             ->with(['employer', 'category'])
-            ->withCount('applications')
             ->withViewerSaved($request->user('sanctum'))
             ->withViewerApplication($request->user('sanctum'))
             ->latest()
