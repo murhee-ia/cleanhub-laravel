@@ -42,11 +42,12 @@ class CleaningJobPostController extends Controller
             'schedule_date' => ['sometimes', 'date'],
             'status' => ['sometimes', Rule::enum(JobPostStatus::class)],
             'sort' => ['sometimes', Rule::in(['newest', 'soonest', 'top_employer'])],
-            'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'per_page' => $this->perPageRule(),
         ]);
 
         $viewer = $request->user('sanctum');
         $canFilterByStatus = $viewer !== null && ! $viewer->isCleaner();
+        $isCleaner = $viewer !== null && $viewer->isCleaner();
 
         if (isset($validated['status']) && ! $canFilterByStatus) {
             throw ValidationException::withMessages([
@@ -72,6 +73,14 @@ class CleaningJobPostController extends Controller
             ->withCount('applications')
             ->withViewerSaved($viewer)
             ->withViewerApplication($viewer)
+            // A cleaner has already acted on a job they applied to, so it drops
+            // out of their feed. Their applications list is where they track it.
+            // A keyword search is exhaustive though: looking a job up by name is
+            // a deliberate act, so applied jobs stay findable there.
+            ->when(
+                $isCleaner && ! isset($validated['search']),
+                fn (Builder $q) => $q->whereDoesntHave('applications', fn (Builder $a) => $a->where('user_id', $viewer->id)),
+            )
             ->when(
                 isset($validated['search']),
                 fn (Builder $builder) => $builder->where(function (Builder $inner) use ($validated): void {
@@ -88,7 +97,7 @@ class CleaningJobPostController extends Controller
 
         $this->applySort($query, $validated['sort'] ?? 'newest');
 
-        $posts = $query->paginate($validated['per_page'] ?? 15)->withQueryString();
+        $posts = $query->paginate($validated['per_page'] ?? 50)->withQueryString();
 
         return CleaningJobPostResource::collection($posts);
     }
@@ -120,6 +129,7 @@ class CleaningJobPostController extends Controller
             'status' => ['sometimes', Rule::enum(JobPostStatus::class)],
             'schedule_date' => ['sometimes', 'date'],
             'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'soonest'])],
+            'per_page' => $this->perPageRule(),
         ]);
 
         $query = CleaningJobPost::query()
@@ -143,17 +153,20 @@ class CleaningJobPostController extends Controller
             default => $query->orderByDesc('created_at'),
         };
 
-        return CleaningJobPostResource::collection($query->paginate(15));
+        return CleaningJobPostResource::collection($query->paginate($validated['per_page'] ?? 50));
     }
 
     /**
      * List a given employer's public job posts for their profile page: every
      * published post across open/reviewing/closed/completed. Drafts (not yet
      * public) and removed (hidden) posts are excluded. Any authenticated user
-     * may view this.
+     * may view this, but an employer looking at their own profile is served by
+     * mine() instead — so no owner-only data (applications_count) is loaded here.
      */
     public function forEmployer(Request $request, int $id): AnonymousResourceCollection
     {
+        $validated = $request->validate(['per_page' => $this->perPageRule()]);
+
         $employer = User::where('role', UserRole::Employer)->findOrFail($id);
 
         $posts = CleaningJobPost::query()
@@ -161,11 +174,10 @@ class CleaningJobPostController extends Controller
             ->published()
             ->where('status', '!=', JobPostStatus::Removed->value)
             ->with(['employer', 'category'])
-            ->withCount('applications')
             ->withViewerSaved($request->user('sanctum'))
             ->withViewerApplication($request->user('sanctum'))
             ->latest()
-            ->paginate(15);
+            ->paginate($validated['per_page'] ?? 50);
 
         return CleaningJobPostResource::collection($posts);
     }

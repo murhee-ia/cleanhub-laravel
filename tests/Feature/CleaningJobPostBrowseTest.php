@@ -58,12 +58,28 @@ test('posts can be sorted by soonest schedule', function () {
 test('per_page controls pagination size', function () {
     CleaningJobPost::factory()->count(5)->create();
 
-    $this->getJson('/api/v1/cleaning-job-posts?per_page=2')
+    $this->getJson('/api/v1/cleaning-job-posts?per_page=200')
         ->assertOk()
-        ->assertJsonCount(2, 'data')
-        ->assertJsonPath('meta.per_page', 2)
+        ->assertJsonCount(5, 'data')
+        ->assertJsonPath('meta.per_page', 200)
         ->assertJsonPath('meta.total', 5);
 });
+
+test('the browse feed defaults to 50 posts per page', function () {
+    CleaningJobPost::factory()->count(51)->create();
+
+    $this->getJson('/api/v1/cleaning-job-posts')
+        ->assertOk()
+        ->assertJsonCount(50, 'data')
+        ->assertJsonPath('meta.per_page', 50)
+        ->assertJsonPath('meta.total', 51);
+});
+
+test('a per_page outside the allowed 50-200 range is rejected', function (int $perPage) {
+    $this->getJson("/api/v1/cleaning-job-posts?per_page={$perPage}")
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('per_page');
+})->with([49, 201]);
 
 test('an invalid sort value is rejected', function () {
     $this->getJson('/api/v1/cleaning-job-posts?sort=cheapest')

@@ -238,7 +238,7 @@ test('a withdrawn applicant drops out of the employer applicant list but is stil
     // The extra meta key must not clobber the pagination meta it merges into.
     expect($response->json('meta.total'))->toBe(1);
     expect($response->json('meta.current_page'))->toBe(1);
-    expect($response->json('meta.per_page'))->toBe(15);
+    expect($response->json('meta.per_page'))->toBe(50);
 });
 
 test('withdrawn_count is zero when no applicant has withdrawn', function () {
@@ -449,17 +449,18 @@ test('non-cleaner roles cannot use the cleaner application endpoints', function 
     $this->postJson('/api/v1/applications', ['cleaning_job_post_id' => $post->id])->assertForbidden();
 })->with(['employer', 'moderator']);
 
-test('the browse feed flags which jobs the cleaner has applied to and with what status', function () {
+test('a job listing flags which jobs the cleaner has applied to and with what status', function () {
+    $employer = User::factory()->employer()->create();
     $cleaner = User::factory()->cleaner()->create();
-    $appliedPost = CleaningJobPost::factory()->create();
-    $untouchedPost = CleaningJobPost::factory()->create();
+    $appliedPost = CleaningJobPost::factory()->create(['employer_id' => $employer->id]);
+    $untouchedPost = CleaningJobPost::factory()->create(['employer_id' => $employer->id]);
     Application::factory()->status(ApplicationStatus::Accepted)->create([
         'user_id' => $cleaner->id,
         'cleaning_job_post_id' => $appliedPost->id,
     ]);
     Sanctum::actingAs($cleaner);
 
-    $data = collect($this->getJson('/api/v1/cleaning-job-posts')->assertOk()->json('data'))->keyBy('id');
+    $data = collect($this->getJson("/api/v1/employers/{$employer->id}/cleaning-job-posts")->assertOk()->json('data'))->keyBy('id');
 
     expect($data[$appliedPost->id]['has_applied'])->toBeTrue();
     expect($data[$appliedPost->id]['application_status'])->toBe('accepted');
@@ -563,4 +564,67 @@ test('computing the application flags on the browse feed does not add a query pe
     DB::disableQueryLog();
 
     expect($many)->toBe($single);
+});
+
+test('a job the cleaner already applied to drops out of their browse feed', function () {
+    $applicant = User::factory()->cleaner()->create();
+    $appliedPost = CleaningJobPost::factory()->create();
+    $untouchedPost = CleaningJobPost::factory()->create();
+    Application::factory()->create([
+        'user_id' => $applicant->id,
+        'cleaning_job_post_id' => $appliedPost->id,
+    ]);
+
+    Sanctum::actingAs($applicant);
+    $this->getJson('/api/v1/cleaning-job-posts')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $untouchedPost->id);
+
+    // The applied job is still tracked on the cleaner's own applications list.
+    $this->getJson('/api/v1/applications')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.job.id', $appliedPost->id);
+});
+
+test('a cleaner searching by keyword still finds a job they already applied to', function () {
+    $applicant = User::factory()->cleaner()->create();
+    $appliedPost = CleaningJobPost::factory()->create(['title' => 'Hotel Housekeeping Team']);
+    Application::factory()->create([
+        'user_id' => $applicant->id,
+        'cleaning_job_post_id' => $appliedPost->id,
+    ]);
+
+    Sanctum::actingAs($applicant);
+    $this->getJson('/api/v1/cleaning-job-posts?search=Housekeeping')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $appliedPost->id)
+        ->assertJsonPath('data.0.has_applied', true);
+});
+
+test('the applied-job exclusion is scoped to the cleaner who applied', function () {
+    $applicant = User::factory()->cleaner()->create();
+    $appliedPost = CleaningJobPost::factory()->create();
+    Application::factory()->create([
+        'user_id' => $applicant->id,
+        'cleaning_job_post_id' => $appliedPost->id,
+    ]);
+
+    Sanctum::actingAs(User::factory()->cleaner()->create());
+    $this->getJson('/api/v1/cleaning-job-posts')
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $appliedPost->id);
+
+    Sanctum::actingAs(User::factory()->employer()->create());
+    $this->getJson('/api/v1/cleaning-job-posts')
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $appliedPost->id);
+});
+
+test('a guest still sees a job that some cleaner has applied to', function () {
+    $post = CleaningJobPost::factory()->create();
+    Application::factory()->create(['cleaning_job_post_id' => $post->id]);
+
+    $this->getJson('/api/v1/cleaning-job-posts')
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $post->id);
 });
