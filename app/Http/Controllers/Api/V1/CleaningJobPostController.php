@@ -42,7 +42,7 @@ class CleaningJobPostController extends Controller
             'schedule_date' => ['sometimes', 'date'],
             'status' => ['sometimes', Rule::enum(JobPostStatus::class)],
             'sort' => ['sometimes', Rule::in(['newest', 'soonest', 'top_employer'])],
-            'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'per_page' => $this->perPageRule(),
         ]);
 
         $viewer = $request->user('sanctum');
@@ -88,7 +88,7 @@ class CleaningJobPostController extends Controller
 
         $this->applySort($query, $validated['sort'] ?? 'newest');
 
-        $posts = $query->paginate($validated['per_page'] ?? 15)->withQueryString();
+        $posts = $query->paginate($validated['per_page'] ?? 50)->withQueryString();
 
         return CleaningJobPostResource::collection($posts);
     }
@@ -120,6 +120,7 @@ class CleaningJobPostController extends Controller
             'status' => ['sometimes', Rule::enum(JobPostStatus::class)],
             'schedule_date' => ['sometimes', 'date'],
             'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'soonest'])],
+            'per_page' => $this->perPageRule(),
         ]);
 
         $query = CleaningJobPost::query()
@@ -143,7 +144,7 @@ class CleaningJobPostController extends Controller
             default => $query->orderByDesc('created_at'),
         };
 
-        return CleaningJobPostResource::collection($query->paginate(15));
+        return CleaningJobPostResource::collection($query->paginate($validated['per_page'] ?? 50));
     }
 
     /**
@@ -154,6 +155,8 @@ class CleaningJobPostController extends Controller
      */
     public function forEmployer(Request $request, int $id): AnonymousResourceCollection
     {
+        $validated = $request->validate(['per_page' => $this->perPageRule()]);
+
         $employer = User::where('role', UserRole::Employer)->findOrFail($id);
 
         $posts = CleaningJobPost::query()
@@ -165,7 +168,7 @@ class CleaningJobPostController extends Controller
             ->withViewerSaved($request->user('sanctum'))
             ->withViewerApplication($request->user('sanctum'))
             ->latest()
-            ->paginate(15);
+            ->paginate($validated['per_page'] ?? 50);
 
         return CleaningJobPostResource::collection($posts);
     }

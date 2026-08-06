@@ -238,7 +238,7 @@ test('a withdrawn applicant drops out of the employer applicant list but is stil
     // The extra meta key must not clobber the pagination meta it merges into.
     expect($response->json('meta.total'))->toBe(1);
     expect($response->json('meta.current_page'))->toBe(1);
-    expect($response->json('meta.per_page'))->toBe(15);
+    expect($response->json('meta.per_page'))->toBe(50);
 });
 
 test('withdrawn_count is zero when no applicant has withdrawn', function () {

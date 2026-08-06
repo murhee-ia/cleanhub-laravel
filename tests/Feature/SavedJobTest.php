@@ -211,3 +211,34 @@ test('computing is_saved on the browse feed does not add a query per post', func
 
     expect($many)->toBe($single);
 });
+
+test('the saved jobs list defaults to 50 per page', function () {
+    $cleaner = User::factory()->cleaner()->create();
+    $posts = CleaningJobPost::factory()->count(51)->create();
+    $posts->each(fn (CleaningJobPost $post) => SavedJob::factory()->create([
+        'user_id' => $cleaner->id,
+        'cleaning_job_post_id' => $post->id,
+    ]));
+    Sanctum::actingAs($cleaner);
+
+    $this->getJson('/api/v1/saved-jobs')
+        ->assertOk()
+        ->assertJsonCount(50, 'data')
+        ->assertJsonPath('meta.per_page', 50)
+        ->assertJsonPath('meta.total', 51);
+});
+
+test('the saved jobs list accepts per_page up to 200 and rejects anything outside 50-200', function () {
+    $cleaner = User::factory()->cleaner()->create();
+    Sanctum::actingAs($cleaner);
+
+    $this->getJson('/api/v1/saved-jobs?per_page=200')
+        ->assertOk()
+        ->assertJsonPath('meta.per_page', 200);
+
+    $this->getJson('/api/v1/saved-jobs?per_page=201')
+        ->assertStatus(422)->assertJsonValidationErrors('per_page');
+
+    $this->getJson('/api/v1/saved-jobs?per_page=49')
+        ->assertStatus(422)->assertJsonValidationErrors('per_page');
+});

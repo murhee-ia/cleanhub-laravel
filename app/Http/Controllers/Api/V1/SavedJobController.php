@@ -31,11 +31,13 @@ class SavedJobController extends Controller
     {
         Gate::authorize('viewAny', SavedJob::class);
 
+        $validated = $request->validate(['per_page' => $this->perPageRule()]);
+
         $saved = SavedJob::query()
             ->where('user_id', $request->user()->id)
             ->with(['cleaningJobPost.employer', 'cleaningJobPost.category'])
             ->latest()
-            ->paginate(15);
+            ->paginate($validated['per_page'] ?? 50);
 
         $this->attachViewerFlags($saved->getCollection(), $request->user());
 

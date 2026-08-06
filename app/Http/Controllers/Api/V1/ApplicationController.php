@@ -37,6 +37,7 @@ class ApplicationController extends Controller
 
         $validated = $request->validate([
             'status' => ['sometimes', Rule::enum(ApplicationStatus::class)],
+            'per_page' => $this->perPageRule(),
         ]);
 
         $applications = Application::query()
@@ -44,7 +45,7 @@ class ApplicationController extends Controller
             ->when(isset($validated['status']), fn (Builder $query) => $query->where('status', $validated['status']))
             ->with(['cleaningJobPost.employer', 'cleaningJobPost.category'])
             ->latest()
-            ->paginate(15);
+            ->paginate($validated['per_page'] ?? 50);
 
         $this->attachViewerFlags($applications->getCollection(), $request->user());
 

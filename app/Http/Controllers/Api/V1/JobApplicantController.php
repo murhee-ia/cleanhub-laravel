@@ -9,6 +9,7 @@ use App\Http\Requests\UpdateApplicationNoteRequest;
 use App\Http\Resources\ApplicationResource;
 use App\Models\Application;
 use App\Models\CleaningJobPost;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -21,16 +22,18 @@ class JobApplicantController extends Controller
      * post, so the leading class string is what routes the check there instead
      * of to CleaningJobPostPolicy.
      */
-    public function index(CleaningJobPost $cleaningJobPost): AnonymousResourceCollection
+    public function index(Request $request, CleaningJobPost $cleaningJobPost): AnonymousResourceCollection
     {
         Gate::authorize('viewApplicants', [Application::class, $cleaningJobPost]);
+
+        $validated = $request->validate(['per_page' => $this->perPageRule()]);
 
         $applications = Application::query()
             ->where('cleaning_job_post_id', $cleaningJobPost->id)
             ->where('status', '!=', ApplicationStatus::Withdrawn)
             ->with(['user.cleanerProfile'])
             ->latest()
-            ->paginate(15);
+            ->paginate($validated['per_page'] ?? 50);
 
         // Applicants who withdrew drop out of the list the employer works
         // through, but the employer still gets to see how many there were.
