@@ -10,10 +10,12 @@ use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
 use App\Http\Controllers\Api\V1\CleaningJobPostController;
 use App\Http\Controllers\Api\V1\JobApplicantController;
+use App\Http\Controllers\Api\V1\Moderation\ReportModerationController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicProfileController;
 use App\Http\Controllers\Api\V1\RatingController;
+use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\SavedJobController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -89,6 +91,26 @@ Route::prefix('v1')->group(function (): void {
         Route::get('notifications', [NotificationController::class, 'index']);
         Route::patch('notifications/read-all', [NotificationController::class, 'markAllRead']);
         Route::patch('notifications/{notification}/read', [NotificationController::class, 'markRead']);
+
+        // Filing a report is open to any authenticated user; working the queue
+        // it feeds is not — that lives behind the moderator/admin group below.
+        Route::post('reports', [ReportController::class, 'store']);
+
+        Route::prefix('moderation')->middleware('role:moderator,admin')->group(function (): void {
+            Route::get('reports', [ReportModerationController::class, 'index']);
+            Route::get('reports/{report}', [ReportModerationController::class, 'show'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/resolve', [ReportModerationController::class, 'resolve'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/reject', [ReportModerationController::class, 'reject'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/escalate', [ReportModerationController::class, 'escalate'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/hide', [ReportModerationController::class, 'hide'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/warn', [ReportModerationController::class, 'warn'])
+                ->whereNumber('report');
+        });
     });
 
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
