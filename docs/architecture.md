@@ -4,8 +4,8 @@ A practical map of the Laravel backend: **if you're looking for X, here's where
 it lives.** For the wire contract see [`api.md`](api.md); for how to run and
 verify things see [`testing.md`](testing.md).
 
-> This file grows as the codebase grows. It currently reflects the auth & roles
-> foundation; later rounds append rows to the tables below in place.
+> This file is updated as the codebase grows — new rows are appended to the
+> tables below in place rather than superseding them.
 
 ---
 
@@ -14,20 +14,20 @@ verify things see [`testing.md`](testing.md).
 | Folder / Path                          | Purpose                                                                                             | Example file                                             |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `routes/api.php`                       | Every endpoint, grouped under the `v1` (and `auth`) prefix. One line per route, no logic.           | `routes/api.php`                                         |
-| `app/Http/Controllers/Api/V1/`         | Thin HTTP handlers, namespaced by API version; auth controllers under `Auth/`. Delegate validation. | `app/Http/Controllers/Api/V1/Auth/LoginController.php`   |
-| `app/Http/Requests/`                   | Form Requests — one per write endpoint; hold `rules()` (validation) and `authorize()`.              | `app/Http/Requests/Auth/RegisterRequest.php`             |
-| `app/Http/Resources/`                  | API Resources defining the exact JSON for a model. Change the wire shape here, not in controllers.  | `app/Http/Resources/UserResource.php`                    |
-| `app/Models/`                          | Eloquent models: casts, relationships, role/verification helpers.                                   | `app/Models/User.php`                                    |
-| `app/Enums/`                           | Backed enums for fixed value sets.                                                                  | `app/Enums/UserRole.php`                                 |
-| `app/Policies/`                        | Per-model authorization policies (auto-discovered, no manual registration).                         | `app/Policies/UserPolicy.php`                            |
+| `app/Http/Controllers/Api/V1/`         | Thin HTTP handlers, namespaced by API version; auth controllers under `Auth/`. Delegate validation. | `app/Http/Controllers/Api/V1/CleaningJobPostController.php` |
+| `app/Http/Requests/`                   | Form Requests — one per write endpoint; hold `rules()` (validation) and `authorize()`.              | `app/Http/Requests/StoreApplicationRequest.php`          |
+| `app/Http/Resources/`                  | API Resources defining the exact JSON for a model. Change the wire shape here, not in controllers.  | `app/Http/Resources/CleaningJobPostResource.php`         |
+| `app/Models/`                          | Eloquent models: casts, relationships, role/verification helpers, query scopes.                     | `app/Models/CleaningJobPost.php`                         |
+| `app/Enums/`                           | Backed enums for fixed value sets.                                                                  | `app/Enums/ApplicationStatus.php`                        |
+| `app/Policies/`                        | Per-model authorization policies (auto-discovered, no manual registration).                         | `app/Policies/ApplicationPolicy.php`                     |
 | `app/Notifications/`                   | Mailables/notifications, e.g. queued email verification.                                            | `app/Notifications/Auth/QueuedVerifyEmail.php`           |
 | `app/Providers/AppServiceProvider.php` | Global auth wiring: admin `Gate::before`, SPA reset-link URL, default password policy.              | `app/Providers/AppServiceProvider.php`                   |
 | `bootstrap/app.php`                    | Route registration, global middleware, and the rule that `/api/*` errors render as JSON.            | `bootstrap/app.php`                                      |
 | `config/`                              | Framework config plus app-specific config.                                                          | `config/cleanhub.php`, `config/cors.php`                 |
-| `database/migrations/`                 | Schema definitions. The `users` table carries the `role` enum column.                               | `database/migrations/0001_01_01_000000_create_users_table.php` |
-| `database/factories/`                  | Test/seed data builders, including role states.                                                    | `database/factories/UserFactory.php`                     |
-| `database/seeders/`                    | Seeders; the single admin is seeded here.                                                           | `database/seeders/AdminUserSeeder.php`                   |
-| `tests/Feature/`, `tests/Unit/`        | Pest tests, grouped by area. Most are feature (HTTP-level) tests.                                   | `tests/Feature/Auth/RegistrationTest.php`                |
+| `database/migrations/`                 | Schema definitions. The `users` table carries the `role` enum column; every job-related table is prefixed `cleaning_` (see below). | `database/migrations/0001_01_01_000000_create_users_table.php` |
+| `database/factories/`                  | Test/seed data builders, including role and status states.                                          | `database/factories/CleaningJobPostFactory.php`          |
+| `database/seeders/`                    | Seeders; the single admin and the fixed category list are seeded here, plus local-only demo data.   | `database/seeders/AdminUserSeeder.php`                   |
+| `tests/Feature/`, `tests/Unit/`        | Pest tests, grouped by area. Most are feature (HTTP-level) tests.                                   | `tests/Feature/ApplicationTest.php`                      |
 
 ## Key decisions
 
@@ -37,13 +37,59 @@ verify things see [`testing.md`](testing.md).
 | API versioning under `/v1`                                   | Lets breaking changes ship later under `/v2` without breaking existing clients.                             | `Route::prefix('v1')` in `routes/api.php`; controllers namespaced `App\Http\Controllers\Api\V1`.                                   |
 | Role stored as an enum on the `users` table                  | Each user has exactly one role from a fixed set — one column beats a join table; a PHP enum adds type safety.| `role` enum column in the users migration; `App\Enums\UserRole` cast on `User`; `RegisterRequest` limits self-registration.        |
 | Admin is a super-user, and exactly one admin exists          | The admin has full control and is never self-registered.                                                     | `Gate::before` in `AppServiceProvider` grants admin every ability; `AdminUserSeeder` is idempotent and keyed on the admin role.    |
-| Prefer soft deletes for admin-facing destructive actions     | Destructive admin actions should be recoverable and auditable, not permanent.                               | Project-wide convention (root `CLAUDE.md`). No such action exists yet; affected models will use the `SoftDeletes` trait.           |
+| Prefer soft deletes for admin-facing destructive actions     | Destructive admin actions should be recoverable and auditable, not permanent.                               | `CleaningJobPost` uses `SoftDeletes`; its `DELETE` endpoint is admin-only via a policy that denies everyone else outright (the admin's `Gate::before` bypass is the sole path through). |
 | Frontend/backend split for email links                       | Verification is a backend concern (verify, then redirect to SPA); reset needs the SPA to collect the password.| `VerifyEmailController` redirects to `FRONTEND_URL?verified=1`; `ResetPassword::createUrlUsing` (in `AppServiceProvider`) targets `FRONTEND_URL/reset-password`. |
+| Job-related tables are prefixed `cleaning_`, never bare `jobs` | Laravel's own queue system already owns a `jobs` table (`0001_01_01_000002_create_jobs_table.php`) — reusing that name would collide. | `cleaning_job_posts`, `cleaning_job_categories` migrations; `CleaningJobPost`/`CleaningJobCategory` models. |
+| `visibility` and `status` are two separate columns on a job post, never merged | They answer different questions — is this live yet, versus where is it in its lifecycle — and merging them would make "draft but somehow closed" representable when it shouldn't be. | `CleaningJobPost` casts both to their own enum; `UpdateCleaningJobPostRequest` locks `status` while a post is a draft and locks everything else once published. |
+| A published job post's status only moves forward, never back or sideways | The lifecycle (`open → reviewing → closed → completed`) models real-world progress; letting it move backward would let an employer un-complete a job after cleaners have already been paid or rated. | `UpdateCleaningJobPostRequest::forwardOnlyStatus()`, a validation closure comparing the requested status against a fixed order map. |
+| A cleaner's viewer-specific flags (`is_saved`, `has_applied`, `application_status`) are attached via query scopes, not per-row lookups | A list of 50 job posts would otherwise need 100+ extra queries (one saved-check and one applied-check per row) just to render badges. | `CleaningJobPost::scopeWithViewerSaved()` / `scopeWithViewerApplication()` — each adds one `withExists`/`withMax` subquery to the whole list's query, not one query per row. |
+| An application row is never deleted, only moved through statuses | The unique `(cleaning_job_post_id, user_id)` constraint is what permanently blocks a second application to the same job — deleting a withdrawn/rejected row would silently reopen that door. | `Application` migration's unique index; `ApplicationController::destroy()` (withdraw) and `JobApplicantController::decide()` (accept/reject) both call `update()`, never `delete()`. |
+| Applying is gated on the cleaner role alone, with no separate "not your own job" check | Roles are fixed and mutually exclusive — the employer who owns a post can never also hold the cleaner role needed to apply, so a dedicated ownership check would guard a code path that can't be reached. | `ApplicationPolicy::create()`; `StoreApplicationRequest::authorize()`. |
+| A schedule conflict on apply is a `409`, not a `422` | It isn't that any single field is invalid — the request is only rejected because of something else the caller already committed to (an accepted job on an overlapping date). A distinct status code lets a client branch on it without parsing message text. | `ApplicationController::conflictsWithAcceptedSchedule()`; the `409` response shares the same `{message, errors}` shape as a `422` so existing field-error handling still works. |
+| No separate calendar table | Accepting an application is the only event that should ever put a job on a cleaner's calendar — a second table just to mirror that would be one more place for the two to drift out of sync. | `ApplicationController::calendar()` reads `Application` rows with `status` in `[accepted, completed]`, joined to their job post, directly. |
+| `per_page` has a floor of 50, not just a ceiling | Every list this API serves backs a feed or table the frontend wants filled in one round trip — a tiny page size would just mean more requests for the same total data. | `Controller::perPageRule()`, a shared helper every paginated list endpoint's validation calls into. |
+| `GET /cleaning-job-categories` and `GET /calendar` skip the pagination envelope entirely | Both return a small, bounded set the caller always wants in full (the whole category list; one cleaner's whole calendar) — wrapping them in `data`/`meta` would add structure with nothing to describe. | `JsonResource::withoutWrapping()` in `AppServiceProvider` — every *other* list endpoint stays wrapped because pagination always adds its own `data`/`meta`/`links`, independent of this setting; these two are the only unpaginated collections in the API, so they're the only ones it actually affects. |
 
 ## Domain model (current)
 
-Only one domain model exists so far; this section grows as tables are added.
-
 - **User** — `id`, `name`, `email`, `password`, `role` (`UserRole` enum:
   `cleaner`/`employer`/`moderator`/`admin`), `email_verified_at`, timestamps.
-  Implements `MustVerifyEmail`; holds Sanctum tokens via `HasApiTokens`.
+  Implements `MustVerifyEmail`; holds Sanctum tokens via `HasApiTokens`. A user
+  has exactly one role for its whole lifetime — there's no promotion path from
+  cleaner to employer or anything similar.
+
+- **CleanerProfile** / **EmployerProfile** — one-to-one with `User`, keyed on
+  `user_id`, created lazily on first read/write (`firstOrCreate()`) rather than
+  at registration time, so a fresh account doesn't need a placeholder row it
+  might never touch. `CleanerProfile` additionally has a many-to-many to
+  `CleaningJobCategory` (the categories a cleaner is willing to work in) via a
+  pivot table. Both store an array of `{name, path}` document records for
+  uploaded PDFs, appended to (never overwritten by) each profile update.
+
+- **CleaningJobCategory** — `id`, `name`, `slug`, `is_active`. An admin-managed
+  lookup table seeded with a fixed starting set (residential, hotel, hospital,
+  office, factory, event cleanup, public space, research facility). Deactivating
+  a category hides it from the pickable list without breaking any job post that
+  already references it.
+
+- **CleaningJobPost** — table `cleaning_job_posts` (see the naming decision
+  above), belongs to an `employer` (`User`) and a `CleaningJobCategory`. Carries
+  `visibility` (`draft`/`published`) and `status`
+  (`open`/`reviewing`/`closed`/`completed`/`removed`) as two independent enum
+  columns — see the key decisions table for why they're kept separate and why
+  `status` only moves forward. Also holds the schedule (`schedule_date`,
+  `start_time`, `end_time`), location, pay (display-only — see root project
+  notes on payment scope), and an array of `{name, path}` uploaded images.
+  Uses `SoftDeletes`.
+
+- **SavedJob** — a pivot between a cleaner (`User`) and a `CleaningJobPost`,
+  unique on `(user_id, cleaning_job_post_id)`. Exists purely to record "this
+  cleaner bookmarked this post" — no status of its own.
+
+- **Application** — belongs to a `CleaningJobPost` and a cleaner `User`.
+  `status` (`ApplicationStatus` enum: `pending`/`accepted`/`rejected`/
+  `withdrawn`/`completed`), an optional `message` from the cleaner and
+  `resume_path`, a `decision_message` the employer can write back (readable by
+  both sides), and a `private_note` visible to the employer alone. Unique on
+  `(cleaning_job_post_id, user_id)` — see the key decisions table for why this
+  row is never deleted once created.
