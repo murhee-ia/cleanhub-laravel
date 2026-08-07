@@ -44,6 +44,7 @@ class ApplicationController extends Controller
             ->where('user_id', $request->user()->id)
             ->when(isset($validated['status']), fn (Builder $query) => $query->where('status', $validated['status']))
             ->with(['cleaningJobPost.employer', 'cleaningJobPost.category'])
+            ->withViewerHasRated($request->user())
             ->latest()
             ->paginate($validated['per_page'] ?? 50);
 
@@ -67,6 +68,7 @@ class ApplicationController extends Controller
             ->where('user_id', $request->user()->id)
             ->whereIn('status', [ApplicationStatus::Accepted, ApplicationStatus::Completed])
             ->with(['cleaningJobPost.employer', 'cleaningJobPost.category'])
+            ->withViewerHasRated($request->user())
             ->get()
             ->sortBy(fn (Application $application): string => $application->cleaningJobPost->schedule_date->toDateString())
             ->values();

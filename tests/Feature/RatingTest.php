@@ -201,6 +201,27 @@ test('a guest cannot submit or list ratings', function () {
     $this->getJson('/api/v1/cleaners/1/ratings')->assertUnauthorized();
 });
 
+test("an application's viewer_has_rated flag flips after the viewer submits, independently per side", function () {
+    $employer = User::factory()->employer()->create();
+    $cleaner = User::factory()->cleaner()->create();
+    $post = CleaningJobPost::factory()->create(['employer_id' => $employer->id]);
+    $application = Application::factory()->status(ApplicationStatus::Completed)->create([
+        'cleaning_job_post_id' => $post->id,
+        'user_id' => $cleaner->id,
+    ]);
+
+    Sanctum::actingAs($cleaner);
+    $this->getJson('/api/v1/applications')->assertJsonPath('data.0.viewer_has_rated', false);
+
+    $this->postJson('/api/v1/ratings', ['application_id' => $application->id, 'stars' => 5])->assertCreated();
+
+    $this->getJson('/api/v1/applications')->assertJsonPath('data.0.viewer_has_rated', true);
+
+    Sanctum::actingAs($employer);
+    $this->getJson("/api/v1/cleaning-job-posts/{$post->id}/applications")
+        ->assertJsonPath('data.0.viewer_has_rated', false);
+});
+
 test('stars must be between 1 and 5', function (int $stars) {
     $cleaner = User::factory()->cleaner()->create();
     $post = CleaningJobPost::factory()->create();

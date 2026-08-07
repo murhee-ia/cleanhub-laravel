@@ -2,7 +2,10 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\ApplicationStatus;
 use App\Models\Application;
+use App\Models\Rating;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Storage;
@@ -40,9 +43,26 @@ class ApplicationResource extends JsonResource
             // private_note it is readable by both sides.
             'decision_message' => $this->decision_message,
             'private_note' => $this->when($viewer?->isEmployer() === true, fn (): ?string => $this->private_note),
+            // Only meaningful once the job is completed — that's the only point
+            // either side is allowed to rate the other at all.
+            'viewer_has_rated' => $this->when(
+                $this->status === ApplicationStatus::Completed,
+                fn (): bool => $this->viewerHasRated($viewer),
+            ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    protected function viewerHasRated(?User $viewer): bool
+    {
+        if ($viewer === null) {
+            return false;
+        }
+
+        return array_key_exists('viewer_has_rated', $this->resource->getAttributes())
+            ? (bool) $this->getAttribute('viewer_has_rated')
+            : Rating::query()->where('application_id', $this->id)->where('reviewer_id', $viewer->id)->exists();
     }
 
     /**

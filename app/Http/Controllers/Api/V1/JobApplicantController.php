@@ -33,6 +33,7 @@ class JobApplicantController extends Controller
             ->where('status', '!=', ApplicationStatus::Withdrawn)
             ->with(['user.cleanerProfile'])
             ->withCleanerRating()
+            ->withViewerHasRated($request->user())
             ->latest()
             ->paginate($validated['per_page'] ?? 50);
 

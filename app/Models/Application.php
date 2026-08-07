@@ -96,4 +96,23 @@ class Application extends Model
                 ->where('status', RatingStatus::Visible),
         ]);
     }
+
+    /**
+     * Expose whether the given viewer has already rated this application as
+     * `viewer_has_rated`, the same single-subquery-per-list shape as
+     * CleaningJobPost's viewer-flag scopes — this is what the frontend uses to
+     * hide the rate button once a review is already in, without needing a
+     * second round trip per row.
+     *
+     * @param  Builder<Application>  $query
+     */
+    public function scopeWithViewerHasRated(Builder $query, User $viewer): void
+    {
+        $query->addSelect([
+            'viewer_has_rated' => Rating::query()
+                ->selectRaw('count(*) > 0')
+                ->whereColumn('application_id', 'applications.id')
+                ->where('reviewer_id', $viewer->id),
+        ]);
+    }
 }
