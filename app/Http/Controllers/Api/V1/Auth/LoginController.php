@@ -23,6 +23,15 @@ class LoginController extends Controller
             ]);
         }
 
+        // A suspended account can't get a fresh token. Suspension also revokes
+        // existing tokens, so this is the second half of the same block: no new
+        // way in while the pause is in effect.
+        if ($user->isSuspended()) {
+            throw ValidationException::withMessages([
+                'email' => ['This account has been suspended.'],
+            ]);
+        }
+
         return response()->json([
             'token' => $user->createToken('auth')->plainTextToken,
             'user' => new UserResource($user),

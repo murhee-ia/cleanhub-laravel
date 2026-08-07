@@ -1,5 +1,12 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Admin\AuditLogController;
+use App\Http\Controllers\Api\V1\Admin\CategoryController;
+use App\Http\Controllers\Api\V1\Admin\JobController;
+use App\Http\Controllers\Api\V1\Admin\ModeratorController;
+use App\Http\Controllers\Api\V1\Admin\OverviewController;
+use App\Http\Controllers\Api\V1\Admin\SettingController;
+use App\Http\Controllers\Api\V1\Admin\UserController;
 use App\Http\Controllers\Api\V1\ApplicationController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\LoginController;
@@ -110,6 +117,38 @@ Route::prefix('v1')->group(function (): void {
                 ->whereNumber('report');
             Route::patch('reports/{report}/warn', [ReportModerationController::class, 'warn'])
                 ->whereNumber('report');
+        });
+
+        // Admin panel — the whole group is admin-only. Every destructive action
+        // here is reversible (suspend/reactivate, soft delete/restore, hide/
+        // unhide) and audited, and nothing here can touch the single admin row.
+        Route::prefix('admin')->middleware('role:admin')->group(function (): void {
+            Route::get('overview', [OverviewController::class, 'show']);
+
+            Route::get('users', [UserController::class, 'index']);
+            Route::get('users/{id}', [UserController::class, 'show'])->whereNumber('id');
+            Route::patch('users/{id}/suspend', [UserController::class, 'suspend'])->whereNumber('id');
+            Route::patch('users/{id}/reactivate', [UserController::class, 'reactivate'])->whereNumber('id');
+            Route::patch('users/{id}/role', [UserController::class, 'changeRole'])->whereNumber('id');
+            Route::patch('users/{id}/restore', [UserController::class, 'restore'])->whereNumber('id');
+            Route::delete('users/{id}', [UserController::class, 'destroy'])->whereNumber('id');
+
+            Route::get('jobs', [JobController::class, 'index']);
+            Route::patch('jobs/{cleaningJobPost}/hide', [JobController::class, 'hide'])->whereNumber('cleaningJobPost');
+            Route::patch('jobs/{cleaningJobPost}/unhide', [JobController::class, 'unhide'])->whereNumber('cleaningJobPost');
+
+            Route::get('categories', [CategoryController::class, 'index']);
+            Route::post('categories', [CategoryController::class, 'store']);
+            Route::patch('categories/{category}', [CategoryController::class, 'update'])->whereNumber('category');
+
+            Route::get('moderators', [ModeratorController::class, 'index']);
+            Route::post('moderators', [ModeratorController::class, 'store']);
+            Route::delete('moderators/{id}', [ModeratorController::class, 'destroy'])->whereNumber('id');
+
+            Route::get('settings', [SettingController::class, 'index']);
+            Route::patch('settings', [SettingController::class, 'update']);
+
+            Route::get('audit-logs', [AuditLogController::class, 'index']);
         });
     });
 
