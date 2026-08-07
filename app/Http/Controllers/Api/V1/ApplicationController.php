@@ -54,8 +54,8 @@ class ApplicationController extends Controller
 
     /**
      * The authenticated cleaner's accepted/completed applications, unpaginated,
-     * for the calendar view (spec 4.9). Per root CLAUDE.md, accepting an
-     * application is the only calendar trigger — there is no separate calendar
+     * for the calendar view. Accepting an application
+     * is the only calendar trigger — there is no separate calendar
      * table, this is just a scoped read of the same applications table sorted
      * into schedule order.
      */
@@ -83,10 +83,9 @@ class ApplicationController extends Controller
      * 422 instead of a database error. Both rejections report on
      * cleaning_job_post_id and differ only by message, matching
      * SavedJobController::store(). A schedule conflict with an already-accepted
-     * job is reported separately as a 409, per root CLAUDE.md's "warn
-     * client-side, validate server-side" overlap rule — a distinct status code
-     * (not just a distinct message) so the frontend can tell it apart from a
-     * plain validation failure.
+     * job is reported separately as a 409, "warn client-side, validate server-side"
+     * overlap rule — a distinct status code (not just a distinct message)
+     * so the frontend can tell it apart from a plain validation failure.
      */
     public function store(StoreApplicationRequest $request): JsonResponse
     {
