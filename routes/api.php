@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
 use App\Http\Controllers\Api\V1\CleaningJobPostController;
 use App\Http\Controllers\Api\V1\JobApplicantController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicProfileController;
 use App\Http\Controllers\Api\V1\RatingController;
@@ -84,6 +85,10 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('application');
         Route::patch('applications/{application}/note', [JobApplicantController::class, 'note'])
             ->whereNumber('application');
+
+        Route::get('notifications', [NotificationController::class, 'index']);
+        Route::patch('notifications/read-all', [NotificationController::class, 'markAllRead']);
+        Route::patch('notifications/{notification}/read', [NotificationController::class, 'markRead']);
     });
 
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
