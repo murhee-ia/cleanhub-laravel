@@ -53,12 +53,39 @@ class ApplicationController extends Controller
     }
 
     /**
+     * The authenticated cleaner's accepted/completed applications, unpaginated,
+     * for the calendar view. Accepting an application
+     * is the only calendar trigger — there is no separate calendar
+     * table, this is just a scoped read of the same applications table sorted
+     * into schedule order.
+     */
+    public function calendar(Request $request): AnonymousResourceCollection
+    {
+        Gate::authorize('viewAny', Application::class);
+
+        $applications = Application::query()
+            ->where('user_id', $request->user()->id)
+            ->whereIn('status', [ApplicationStatus::Accepted, ApplicationStatus::Completed])
+            ->with(['cleaningJobPost.employer', 'cleaningJobPost.category'])
+            ->get()
+            ->sortBy(fn (Application $application): string => $application->cleaningJobPost->schedule_date->toDateString())
+            ->values();
+
+        $this->attachViewerFlags($applications, $request->user());
+
+        return ApplicationResource::collection($applications);
+    }
+
+    /**
      * Apply to an open, published job as the authenticated cleaner. The unique
      * (cleaning_job_post_id, user_id) index is the permanent guard against a
      * second application; the duplicate check here turns that into a readable
      * 422 instead of a database error. Both rejections report on
      * cleaning_job_post_id and differ only by message, matching
-     * SavedJobController::store().
+     * SavedJobController::store(). A schedule conflict with an already-accepted
+     * job is reported separately as a 409, "warn client-side, validate server-side"
+     * overlap rule — a distinct status code (not just a distinct message)
+     * so the frontend can tell it apart from a plain validation failure.
      */
     public function store(StoreApplicationRequest $request): JsonResponse
     {
@@ -79,6 +106,15 @@ class ApplicationController extends Controller
             throw ValidationException::withMessages([
                 'cleaning_job_post_id' => 'You have already applied to this job.',
             ]);
+        }
+
+        if ($this->conflictsWithAcceptedSchedule($post, $request->user())) {
+            $message = "This job's schedule conflicts with a job you're already accepted for.";
+
+            return response()->json([
+                'message' => $message,
+                'errors' => ['cleaning_job_post_id' => [$message]],
+            ], 409);
         }
 
         $application = new Application([
@@ -134,6 +170,42 @@ class ApplicationController extends Controller
                 ->setAttribute('has_applied_by_viewer', true)
                 ->setAttribute('viewer_application_status_raw', $application->status->value);
         });
+    }
+
+    /**
+     * True when the target job's schedule overlaps one of the cleaner's
+     * already-accepted jobs on the same date. A missing start/end time on
+     * either side means that job isn't scoped to a sub-day window, so it's
+     * treated as occupying the whole day.
+     */
+    protected function conflictsWithAcceptedSchedule(CleaningJobPost $target, User $cleaner): bool
+    {
+        $acceptedJobIds = Application::query()
+            ->where('user_id', $cleaner->id)
+            ->where('status', ApplicationStatus::Accepted)
+            ->pluck('cleaning_job_post_id');
+
+        $sameDayAccepted = CleaningJobPost::query()
+            ->whereIn('id', $acceptedJobIds)
+            ->whereDate('schedule_date', $target->schedule_date)
+            ->get();
+
+        foreach ($sameDayAccepted as $existing) {
+            if ($this->timeWindowsOverlap($existing, $target)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function timeWindowsOverlap(CleaningJobPost $a, CleaningJobPost $b): bool
+    {
+        if ($a->start_time === null || $a->end_time === null || $b->start_time === null || $b->end_time === null) {
+            return true;
+        }
+
+        return $a->start_time < $b->end_time && $b->start_time < $a->end_time;
     }
 
     /**

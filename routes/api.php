@@ -64,6 +64,8 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('applications/{application}', [ApplicationController::class, 'destroy'])
             ->whereNumber('application');
 
+        Route::get('calendar', [ApplicationController::class, 'calendar']);
+
         // `/detail` keeps the single-application read from colliding with the
         // flat GET /applications collection above.
         Route::get('cleaning-job-posts/{cleaningJobPost}/applications', [JobApplicantController::class, 'index'])

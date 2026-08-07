@@ -628,3 +628,127 @@ test('a guest still sees a job that some cleaner has applied to', function () {
     $this->getJson('/api/v1/cleaning-job-posts')
         ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $post->id);
 });
+
+test('the calendar only returns accepted and completed applications, chronologically', function () {
+    $cleaner = User::factory()->cleaner()->create();
+    $later = CleaningJobPost::factory()->create(['schedule_date' => now()->addDays(20)->toDateString()]);
+    $sooner = CleaningJobPost::factory()->create(['schedule_date' => now()->addDays(5)->toDateString()]);
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Accepted)->create(['cleaning_job_post_id' => $later->id]);
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Completed)->create(['cleaning_job_post_id' => $sooner->id]);
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Pending)->create();
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Rejected)->create();
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Withdrawn)->create();
+
+    // Unpaginated (no `data`/`meta` envelope, unlike every other list endpoint):
+    // a calendar month needs every accepted/completed job at once, not page 1
+    // of 50 — see AppServiceProvider's JsonResource::withoutWrapping().
+    Sanctum::actingAs($cleaner);
+    $this->getJson('/api/v1/calendar')
+        ->assertOk()
+        ->assertJsonCount(2)
+        ->assertJsonPath('0.job.id', $sooner->id)
+        ->assertJsonPath('1.job.id', $later->id);
+});
+
+test('the calendar is scoped to the authenticated cleaner', function () {
+    $viewer = User::factory()->cleaner()->create();
+    $otherCleaner = User::factory()->cleaner()->create();
+    Application::factory()->for($otherCleaner)->status(ApplicationStatus::Accepted)->create();
+
+    Sanctum::actingAs($viewer);
+    $this->getJson('/api/v1/calendar')->assertOk()->assertExactJson([]);
+});
+
+test('a guest or employer cannot read the calendar', function () {
+    $this->getJson('/api/v1/calendar')->assertUnauthorized();
+
+    Sanctum::actingAs(User::factory()->employer()->create());
+    $this->getJson('/api/v1/calendar')->assertForbidden();
+});
+
+test('applying is rejected with a 409 when the schedule overlaps an accepted job', function () {
+    $cleaner = User::factory()->cleaner()->create();
+    $acceptedPost = CleaningJobPost::factory()->create([
+        'schedule_date' => '2026-09-10',
+        'start_time' => '09:00',
+        'end_time' => '13:00',
+    ]);
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Accepted)->create(['cleaning_job_post_id' => $acceptedPost->id]);
+
+    $overlapping = CleaningJobPost::factory()->create([
+        'schedule_date' => '2026-09-10',
+        'start_time' => '12:00',
+        'end_time' => '16:00',
+    ]);
+
+    Sanctum::actingAs($cleaner);
+    $this->postJson('/api/v1/applications', ['cleaning_job_post_id' => $overlapping->id])
+        ->assertStatus(409)
+        ->assertJsonValidationErrors('cleaning_job_post_id');
+
+    expect(Application::where('cleaning_job_post_id', $overlapping->id)->exists())->toBeFalse();
+});
+
+test('applying is allowed when the schedule is the same day but the time windows do not overlap', function () {
+    $cleaner = User::factory()->cleaner()->create();
+    $acceptedPost = CleaningJobPost::factory()->create([
+        'schedule_date' => '2026-09-10',
+        'start_time' => '09:00',
+        'end_time' => '11:00',
+    ]);
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Accepted)->create(['cleaning_job_post_id' => $acceptedPost->id]);
+
+    $nonOverlapping = CleaningJobPost::factory()->create([
+        'schedule_date' => '2026-09-10',
+        'start_time' => '12:00',
+        'end_time' => '16:00',
+    ]);
+
+    Sanctum::actingAs($cleaner);
+    $this->postJson('/api/v1/applications', ['cleaning_job_post_id' => $nonOverlapping->id])
+        ->assertCreated();
+});
+
+test('applying is allowed against a different date even with an accepted job', function () {
+    $cleaner = User::factory()->cleaner()->create();
+    $acceptedPost = CleaningJobPost::factory()->create(['schedule_date' => '2026-09-10']);
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Accepted)->create(['cleaning_job_post_id' => $acceptedPost->id]);
+
+    $otherDay = CleaningJobPost::factory()->create(['schedule_date' => '2026-09-11']);
+
+    Sanctum::actingAs($cleaner);
+    $this->postJson('/api/v1/applications', ['cleaning_job_post_id' => $otherDay->id])
+        ->assertCreated();
+});
+
+test('a same-day pending (not yet accepted) application does not block a new apply', function () {
+    $cleaner = User::factory()->cleaner()->create();
+    $pendingPost = CleaningJobPost::factory()->create(['schedule_date' => '2026-09-10']);
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Pending)->create(['cleaning_job_post_id' => $pendingPost->id]);
+
+    $sameDay = CleaningJobPost::factory()->create(['schedule_date' => '2026-09-10']);
+
+    Sanctum::actingAs($cleaner);
+    $this->postJson('/api/v1/applications', ['cleaning_job_post_id' => $sameDay->id])
+        ->assertCreated();
+});
+
+test('a same-day job missing a time window is treated as a full-day conflict', function () {
+    $cleaner = User::factory()->cleaner()->create();
+    $acceptedPost = CleaningJobPost::factory()->create([
+        'schedule_date' => '2026-09-10',
+        'start_time' => null,
+        'end_time' => null,
+    ]);
+    Application::factory()->for($cleaner)->status(ApplicationStatus::Accepted)->create(['cleaning_job_post_id' => $acceptedPost->id]);
+
+    $sameDay = CleaningJobPost::factory()->create([
+        'schedule_date' => '2026-09-10',
+        'start_time' => '18:00',
+        'end_time' => '20:00',
+    ]);
+
+    Sanctum::actingAs($cleaner);
+    $this->postJson('/api/v1/applications', ['cleaning_job_post_id' => $sameDay->id])
+        ->assertStatus(409);
+});
