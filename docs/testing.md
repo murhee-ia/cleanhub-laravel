@@ -49,6 +49,14 @@ simpler than digging through the log.
 | Login & logout    | `tests/Feature/Auth/AuthenticationTest.php`   | Tokens issue only for valid credentials and are genuinely revocable. |
 | Email verification| `tests/Feature/Auth/EmailVerificationTest.php`| Only the real email owner can verify; the link is unforgeable.       |
 | Password reset    | `tests/Feature/Auth/PasswordResetTest.php`    | Passwords change only with a genuine broker token.                   |
+| Categories        | `tests/Feature/CleaningJobCategoryTest.php`   | Only active categories are listed; guests can read them.             |
+| Job browsing       | `tests/Feature/CleaningJobPostBrowseTest.php` | The open/published default, the search-vs-passive-feed split, status filtering privilege, and pagination bounds. |
+| Job posting/updates| `tests/Feature/CleaningJobPostManageTest.php`, `tests/Feature/CleaningJobPostUpdateTest.php` | A draft's content stays fully editable; a published post locks content and only advances `status` forward. |
+| Job detail         | `tests/Feature/CleaningJobPostShowTest.php`   | A single post is visible to the public only when published/non-removed, plus the owner's own-state exception. |
+| Employer's public job history | `tests/Feature/EmployerJobListingTest.php` | `GET /employers/{id}/cleaning-job-posts` excludes drafts/removed posts and never leaks `applications_count`. |
+| Profiles           | `tests/Feature/ProfileTest.php`, `tests/Feature/PublicProfileTest.php` | A profile is created lazily on first access; `email` is owner-only; documents append rather than replace. |
+| Saved jobs         | `tests/Feature/SavedJobTest.php`              | Only open/published jobs can be saved; duplicate saves and cross-user unsaves are rejected; pagination bounds. |
+| Applications & calendar | `tests/Feature/ApplicationTest.php`      | Every apply-rejection rule (closed, duplicate, self-apply, schedule conflict), accept/reject/withdraw transitions, and that the calendar only ever shows accepted/completed jobs. |
 
 > Run a whole group with its file path (e.g.
 > `php artisan test tests/Feature/Auth/RegistrationTest.php`); narrow to a single
@@ -236,3 +244,210 @@ curl -s -X POST http://localhost:8000/api/v1/auth/login \
 
 **Expected:** step 1 → `200`; step 2 → `200`; step 3 → `422`; step 4 → `200` with
 a fresh token, proving the new password is live.
+
+### Job posts (browse, post, update, delete)
+
+**What it verifies & why:** the browse feed must default to `open`+`published`
+for everyone but the employer market-watching by status; a post's content must
+be editable while it's a draft and locked once published, with `status` moving
+forward only; and deleting a post must be an admin-only action, not something
+even the owning employer can do.
+
+**Run just these groups:**
+
+```bash
+php artisan test tests/Feature/CleaningJobPostBrowseTest.php
+php artisan test tests/Feature/CleaningJobPostManageTest.php
+php artisan test tests/Feature/CleaningJobPostUpdateTest.php
+php artisan test tests/Feature/CleaningJobPostShowTest.php
+php artisan test tests/Feature/EmployerJobListingTest.php
+```
+
+**Reproduce by hand** — register an employer and a cleaner first (see
+Registration above), then:
+
+```bash
+# 1. Employer posts a published, open job → expect 201
+curl -s -X POST http://localhost:8000/api/v1/cleaning-job-posts \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer EMPLOYER_TOKEN" \
+  -d '{"title":"Hotel Housekeeping Team","cleaning_job_category_id":2,"description":"Looking for a reliable housekeeping team.","country":"Philippines","city":"Cebu City","schedule_date":"2026-09-15","start_time":"08:00","end_time":"16:00","cleaners_needed":3,"pay_amount":1500,"pay_currency":"PHP","visibility":"published"}'
+
+# 2. Cleaner browses the default feed → expect the new post included, is_saved/has_applied both false
+curl -s "http://localhost:8000/api/v1/cleaning-job-posts?per_page=50" \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+
+# 3. Cleaner tries to filter by status → expect 422 on the status field
+curl -s "http://localhost:8000/api/v1/cleaning-job-posts?status=open" \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+
+# 4. Employer advances the post's status → expect 200, status now "reviewing"
+curl -s -X PATCH http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer EMPLOYER_TOKEN" \
+  -d '{"status":"reviewing"}'
+
+# 5. Employer tries to edit a locked (published) field → expect 422
+curl -s -X PATCH http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer EMPLOYER_TOKEN" \
+  -d '{"title":"New Title"}'
+
+# 6. Employer tries to delete their own post → expect 403
+curl -s -X DELETE http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
+  -H "Accept: application/json" -H "Authorization: Bearer EMPLOYER_TOKEN"
+
+# 7. Log in as the seeded admin and delete it → expect 200
+curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -d '{"email":"admin@cleanhub.test","password":"password"}'
+curl -s -X DELETE http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
+  -H "Accept: application/json" -H "Authorization: Bearer ADMIN_TOKEN"
+```
+
+(`admin@cleanhub.test` / `password` are the local defaults from
+`config/cleanhub.php` — override `ADMIN_EMAIL`/`ADMIN_PASSWORD` in `.env` before
+seeding anywhere real users could reach it.)
+
+**Expected:** step 1 → `201`; step 2 → `200` with the post listed; step 3 →
+`422`; step 4 → `200` with `status: "reviewing"`; step 5 → `422`; step 6 →
+`403`; step 7's login → `200`, then delete → `200`.
+
+### Saved jobs
+
+**What it verifies & why:** only a currently open/published job can be saved,
+a job can't be saved twice, and a saved job that later closes stays on the list
+(never silently filtered out).
+
+**Run just this group:**
+
+```bash
+php artisan test tests/Feature/SavedJobTest.php
+```
+
+**Reproduce by hand:**
+
+```bash
+# 1. Cleaner saves the job → expect 201
+curl -s -X POST http://localhost:8000/api/v1/saved-jobs \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer CLEANER_TOKEN" \
+  -d '{"cleaning_job_post_id": PASTE_JOB_ID}'
+
+# 2. Save it again → expect 422 "already in your saved list"
+curl -s -X POST http://localhost:8000/api/v1/saved-jobs \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer CLEANER_TOKEN" \
+  -d '{"cleaning_job_post_id": PASTE_JOB_ID}'
+
+# 3. Unsave it → expect 200
+curl -s -X DELETE http://localhost:8000/api/v1/saved-jobs/PASTE_JOB_ID \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+```
+
+**Expected:** step 1 → `201`; step 2 → `422`; step 3 → `200`.
+
+### Applications & calendar
+
+**What it verifies & why:** the entire apply lifecycle — a cleaner can apply
+once and only once to an open job (closed-job and duplicate rejections are both
+`422`s but with different messages), an employer can never apply to their own
+listing (a `403` before validation even runs), a schedule that overlaps an
+already-accepted job is rejected as a `409` rather than a `422`, and accepting
+an application is the one and only thing that puts a job on the cleaner's
+calendar.
+
+**Run just this group:**
+
+```bash
+php artisan test tests/Feature/ApplicationTest.php
+```
+
+**Reproduce by hand** — continuing with the job from the section above (still
+`open`/`published`; re-post one if it was advanced/deleted earlier):
+
+```bash
+# 1. Cleaner applies with a message → expect 201, status "pending"
+curl -s -X POST http://localhost:8000/api/v1/applications \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer CLEANER_TOKEN" \
+  -d '{"cleaning_job_post_id": PASTE_JOB_ID, "message": "I have five years of hotel housekeeping experience."}'
+
+# 2. Same cleaner applies again → expect 422 "already applied"
+curl -s -X POST http://localhost:8000/api/v1/applications \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer CLEANER_TOKEN" \
+  -d '{"cleaning_job_post_id": PASTE_JOB_ID}'
+
+# 3. The employer who posted it tries to apply to their own job → expect 403
+curl -s -X POST http://localhost:8000/api/v1/applications \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer EMPLOYER_TOKEN" \
+  -d '{"cleaning_job_post_id": PASTE_JOB_ID}'
+
+# 4. Employer views the applicant list → expect 201's application listed
+curl -s http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID/applications \
+  -H "Accept: application/json" -H "Authorization: Bearer EMPLOYER_TOKEN"
+
+# 5. Employer accepts it → expect 200, status "accepted"
+curl -s -X PATCH http://localhost:8000/api/v1/applications/PASTE_APPLICATION_ID/accept \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer EMPLOYER_TOKEN" \
+  -d '{"message": "You are booked in — see you on site at 8am."}'
+
+# 6. Cleaner checks their calendar → expect the now-accepted job listed
+curl -s http://localhost:8000/api/v1/calendar \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+
+# 7. Cleaner applies to a second job on the same date/overlapping time → expect 409
+curl -s -X POST http://localhost:8000/api/v1/applications \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer CLEANER_TOKEN" \
+  -d '{"cleaning_job_post_id": PASTE_OVERLAPPING_JOB_ID}'
+```
+
+**Expected:** step 1 → `201`; step 2 → `422`; step 3 → `403`; step 4 → `200`
+with the application listed; step 5 → `200` with `status: "accepted"`; step 6
+→ `200` with a bare array containing that job; step 7 → `409`.
+
+To also exercise withdraw and reject: apply to a fresh job
+(`POST /applications`), then `DELETE /applications/{id}` while it's still
+`pending` → expect `200 { "message": "Application withdrawn." }`; separately,
+have the employer `PATCH /applications/{id}/reject` on a different pending
+application → expect `200` with `status: "rejected"`.
+
+### Profiles
+
+**What it verifies & why:** a profile exists (as an empty object) the first
+time it's read, without a separate creation step; only the profile's own owner
+ever sees its `email`; and uploaded documents accumulate rather than replace
+each other on every update.
+
+**Run just this group:**
+
+```bash
+php artisan test tests/Feature/ProfileTest.php
+php artisan test tests/Feature/PublicProfileTest.php
+```
+
+**Reproduce by hand:**
+
+```bash
+# 1. Cleaner reads their own (untouched) profile → expect 200, mostly-null fields
+curl -s http://localhost:8000/api/v1/profile \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+
+# 2. Cleaner updates bio/location/categories/languages → expect 200 with those fields set
+curl -s -X PATCH http://localhost:8000/api/v1/profile \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer CLEANER_TOKEN" \
+  -d '{"bio":"Detail-oriented cleaner with hotel and residential experience.","country":"Philippines","city":"Cebu City","cleaning_categories":[1,2],"languages":["English","Cebuano"]}'
+
+# 3. The employer views the cleaner's public profile → expect 200, no email field
+curl -s http://localhost:8000/api/v1/cleaners/PASTE_CLEANER_USER_ID \
+  -H "Accept: application/json" -H "Authorization: Bearer EMPLOYER_TOKEN"
+```
+
+**Expected:** step 1 → `200`; step 2 → `200` reflecting the new values,
+`cleaning_categories` expanded to `{id, name, slug}` objects; step 3 → `200`
+with every field from step 2 except `email`.
