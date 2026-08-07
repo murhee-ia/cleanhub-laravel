@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\JobPostStatus;
 use App\Enums\JobPostVisibility;
+use App\Enums\RatingStatus;
 use Database\Factories\CleaningJobPostFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -168,6 +169,28 @@ class CleaningJobPost extends Model
         $query
             ->withExists(['applications as has_applied_by_viewer' => $constrainToViewer])
             ->withMax(['applications as viewer_application_status_raw' => $constrainToViewer], 'status');
+    }
+
+    /**
+     * Expose the owning employer's rating average/count as
+     * `employer_rating_average`/`employer_rating_count` via a single
+     * correlated subquery per list, so a browse feed of many posts costs one
+     * extra pair of subqueries total, not one pair per row.
+     *
+     * @param  Builder<CleaningJobPost>  $query
+     */
+    public function scopeWithEmployerRating(Builder $query): void
+    {
+        $query->addSelect([
+            'employer_rating_average' => Rating::query()
+                ->selectRaw('avg(stars)')
+                ->whereColumn('reviewee_id', 'cleaning_job_posts.employer_id')
+                ->where('status', RatingStatus::Visible),
+            'employer_rating_count' => Rating::query()
+                ->selectRaw('count(*)')
+                ->whereColumn('reviewee_id', 'cleaning_job_posts.employer_id')
+                ->where('status', RatingStatus::Visible),
+        ]);
     }
 
     /**

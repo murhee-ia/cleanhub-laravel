@@ -1,6 +1,8 @@
 <?php
 
+use App\Enums\ApplicationStatus;
 use App\Enums\JobPostStatus;
+use App\Models\Application;
 use App\Models\CleaningJobPost;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
@@ -61,6 +63,24 @@ test('a published post can advance its status forward', function () {
     $this->patchJson("/api/v1/cleaning-job-posts/{$post->id}", ['status' => 'completed'])
         ->assertOk()
         ->assertJsonPath('status', 'completed');
+});
+
+test('completing a post moves its accepted applications to completed but leaves other statuses alone', function () {
+    $employer = User::factory()->employer()->create();
+    $post = CleaningJobPost::factory()->create(['employer_id' => $employer->id]);
+    $accepted = Application::factory()->status(ApplicationStatus::Accepted)->create(['cleaning_job_post_id' => $post->id]);
+    $rejected = Application::factory()->status(ApplicationStatus::Rejected)->create(['cleaning_job_post_id' => $post->id]);
+    $withdrawn = Application::factory()->status(ApplicationStatus::Withdrawn)->create(['cleaning_job_post_id' => $post->id]);
+
+    Sanctum::actingAs($employer);
+
+    $this->patchJson("/api/v1/cleaning-job-posts/{$post->id}", ['status' => 'completed'])
+        ->assertOk()
+        ->assertJsonPath('status', 'completed');
+
+    expect($accepted->refresh()->status)->toBe(ApplicationStatus::Completed);
+    expect($rejected->refresh()->status)->toBe(ApplicationStatus::Rejected);
+    expect($withdrawn->refresh()->status)->toBe(ApplicationStatus::Withdrawn);
 });
 
 test('content edits on a published post are rejected', function () {
