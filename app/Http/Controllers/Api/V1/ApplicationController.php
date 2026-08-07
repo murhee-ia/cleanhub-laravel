@@ -12,6 +12,8 @@ use App\Models\Application;
 use App\Models\CleaningJobPost;
 use App\Models\SavedJob;
 use App\Models\User;
+use App\Notifications\Applications\ApplicationWithdrawn;
+use App\Notifications\Applications\NewApplicant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -134,6 +136,8 @@ class ApplicationController extends Controller
 
         $this->attachViewerFlags(new Collection([$application]), $request->user());
 
+        $post->employer->notify(new NewApplicant($application));
+
         return (new ApplicationResource($application))->response()->setStatusCode(201);
     }
 
@@ -146,6 +150,9 @@ class ApplicationController extends Controller
         Gate::authorize('withdraw', $application);
 
         $application->update(['status' => ApplicationStatus::Withdrawn]);
+
+        $application->load('cleaningJobPost.employer');
+        $application->cleaningJobPost->employer->notify(new ApplicationWithdrawn($application));
 
         return response()->json(['message' => 'Application withdrawn.']);
     }

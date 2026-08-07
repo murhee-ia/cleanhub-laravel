@@ -9,6 +9,8 @@ use App\Http\Requests\UpdateApplicationNoteRequest;
 use App\Http\Resources\ApplicationResource;
 use App\Models\Application;
 use App\Models\CleaningJobPost;
+use App\Notifications\Applications\ApplicationAccepted;
+use App\Notifications\Applications\ApplicationRejected;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
@@ -114,7 +116,13 @@ class JobApplicantController extends Controller
             'decision_message' => $request->validated('message'),
         ]);
 
-        $application->load(['user.cleanerProfile']);
+        $application->load(['user.cleanerProfile', 'cleaningJobPost']);
+
+        $application->user->notify(
+            $status === ApplicationStatus::Accepted
+                ? new ApplicationAccepted($application)
+                : new ApplicationRejected($application),
+        );
 
         return new ApplicationResource($application);
     }
