@@ -34,12 +34,24 @@ class CleanerProfileResource extends JsonResource
             ),
             'languages' => $this->languages ?? [],
             'documents' => $this->mapDocuments(),
-            'rating_average' => null,
-            'rating_count' => 0,
+            'rating_average' => $this->ratingAverage(),
+            'rating_count' => $this->ratingCount(),
             'completed_jobs_count' => 0,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    protected function ratingAverage(): ?float
+    {
+        $average = $this->user->ratingsReceived()->visible()->avg('stars');
+
+        return $average === null ? null : round((float) $average, 2);
+    }
+
+    protected function ratingCount(): int
+    {
+        return $this->user->ratingsReceived()->visible()->count();
     }
 
     /**

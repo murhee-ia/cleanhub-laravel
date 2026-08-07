@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\CleaningJobPostController;
 use App\Http\Controllers\Api\V1\JobApplicantController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicProfileController;
+use App\Http\Controllers\Api\V1\RatingController;
 use App\Http\Controllers\Api\V1\SavedJobController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -46,6 +47,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('employers/{id}', [PublicProfileController::class, 'employer']);
         Route::get('employers/{id}/cleaning-job-posts', [CleaningJobPostController::class, 'forEmployer'])
             ->whereNumber('id');
+        Route::get('cleaners/{id}/ratings', [RatingController::class, 'forCleaner'])
+            ->whereNumber('id');
+        Route::get('employers/{id}/ratings', [RatingController::class, 'forEmployer'])
+            ->whereNumber('id');
+        Route::post('ratings', [RatingController::class, 'store']);
 
         Route::get('cleaning-job-posts/mine', [CleaningJobPostController::class, 'mine']);
         Route::post('cleaning-job-posts', [CleaningJobPostController::class, 'store']);

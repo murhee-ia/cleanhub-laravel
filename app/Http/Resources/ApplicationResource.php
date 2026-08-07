@@ -46,10 +46,13 @@ class ApplicationResource extends JsonResource
     }
 
     /**
-     * Rating and completed-job counts are placeholders until Phase 7 lands the
-     * rating system, matching CleanerProfileResource's own stubs.
+     * completed_jobs_count stays a placeholder; rating fields read from
+     * JobApplicantController::index's single-subquery-per-page select when
+     * present, and fall back to a direct query on a single-record response
+     * (show/accept/reject/note), matching CleaningJobPostResource's employer
+     * block.
      *
-     * @return array{id: int, full_name: string, photo_url: string|null, rating_average: null, rating_count: int, completed_jobs_count: int}
+     * @return array{id: int, full_name: string, photo_url: string|null, rating_average: float|null, rating_count: int, completed_jobs_count: int}
      */
     protected function cleanerSummary(): array
     {
@@ -59,9 +62,25 @@ class ApplicationResource extends JsonResource
             'id' => $this->user->id,
             'full_name' => $this->user->name,
             'photo_url' => $photoPath === null ? null : Storage::disk('public')->url($photoPath),
-            'rating_average' => null,
-            'rating_count' => 0,
+            'rating_average' => $this->cleanerRatingAverage(),
+            'rating_count' => $this->cleanerRatingCount(),
             'completed_jobs_count' => 0,
         ];
+    }
+
+    protected function cleanerRatingAverage(): ?float
+    {
+        $average = array_key_exists('cleaner_rating_average', $this->resource->getAttributes())
+            ? $this->getAttribute('cleaner_rating_average')
+            : $this->user->ratingsReceived()->visible()->avg('stars');
+
+        return $average === null ? null : round((float) $average, 2);
+    }
+
+    protected function cleanerRatingCount(): int
+    {
+        return array_key_exists('cleaner_rating_count', $this->resource->getAttributes())
+            ? (int) $this->getAttribute('cleaner_rating_count')
+            : $this->user->ratingsReceived()->visible()->count();
     }
 }

@@ -9,6 +9,7 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -88,5 +89,25 @@ class User extends Authenticatable implements MustVerifyEmail
     public function employerProfile(): HasOne
     {
         return $this->hasOne(EmployerProfile::class);
+    }
+
+    /**
+     * Ratings this user received, either as the cleaner or as the employer of
+     * a completed application — the two directions are independent rows on
+     * the same table, distinguished only by who the reviewee is.
+     *
+     * @return HasMany<Rating, $this>
+     */
+    public function ratingsReceived(): HasMany
+    {
+        return $this->hasMany(Rating::class, 'reviewee_id');
+    }
+
+    /**
+     * @return HasMany<Rating, $this>
+     */
+    public function ratingsGiven(): HasMany
+    {
+        return $this->hasMany(Rating::class, 'reviewer_id');
     }
 }

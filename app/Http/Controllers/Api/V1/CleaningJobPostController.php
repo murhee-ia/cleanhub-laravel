@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\ApplicationStatus;
 use App\Enums\JobPostStatus;
 use App\Enums\JobPostVisibility;
 use App\Enums\UserRole;
@@ -71,6 +72,7 @@ class CleaningJobPostController extends Controller
             )
             ->with(['employer', 'category'])
             ->withCount('applications')
+            ->withEmployerRating()
             ->withViewerSaved($viewer)
             ->withViewerApplication($viewer)
             // A cleaner has already acted on a job they applied to, so it drops
@@ -109,9 +111,14 @@ class CleaningJobPostController extends Controller
     {
         match ($sort) {
             'soonest' => $query->orderBy('schedule_date'),
-            // top_employer sorts by employer rating once Phase 7 lands; until
-            // then there is no rating, so it falls back to newest.
-            'top_employer' => $query->orderByDesc('created_at'),
+            // Relies on withEmployerRating() already being applied to the query
+            // for the `employer_rating_average` select alias to exist; an
+            // employer with no ratings yet sorts last, not first, since a NULL
+            // average is neither highest nor lowest under most drivers, so it's
+            // pinned there explicitly instead of leaving driver behavior to chance.
+            'top_employer' => $query
+                ->orderByRaw('employer_rating_average IS NULL')
+                ->orderByDesc('employer_rating_average'),
             default => $query->orderByDesc('created_at'),
         };
     }
@@ -136,6 +143,7 @@ class CleaningJobPostController extends Controller
             ->where('employer_id', $request->user()->id)
             ->with(['employer', 'category'])
             ->withCount('applications')
+            ->withEmployerRating()
             ->when(
                 isset($validated['search']),
                 fn (Builder $builder) => $builder->where(function (Builder $inner) use ($validated): void {
@@ -174,6 +182,7 @@ class CleaningJobPostController extends Controller
             ->published()
             ->where('status', '!=', JobPostStatus::Removed->value)
             ->with(['employer', 'category'])
+            ->withEmployerRating()
             ->withViewerSaved($request->user('sanctum'))
             ->withViewerApplication($request->user('sanctum'))
             ->latest()
@@ -207,6 +216,8 @@ class CleaningJobPostController extends Controller
      */
     public function update(UpdateCleaningJobPostRequest $request, CleaningJobPost $cleaningJobPost): CleaningJobPostResource
     {
+        $wasCompleted = $cleaningJobPost->status === JobPostStatus::Completed;
+
         $cleaningJobPost->fill($request->safe()->except('media'));
 
         if ($request->hasFile('media')) {
@@ -214,6 +225,18 @@ class CleaningJobPostController extends Controller
         }
 
         $cleaningJobPost->save();
+
+        // Completing a post is what unlocks rating: every accepted applicant
+        // moves to `completed` alongside it, so each side has a completed
+        // application to rate the other about. Applications the employer never
+        // accepted (rejected/withdrawn) are not part of the completed job and
+        // stay as they are.
+        if (! $wasCompleted && $cleaningJobPost->status === JobPostStatus::Completed) {
+            $cleaningJobPost->applications()
+                ->where('status', ApplicationStatus::Accepted)
+                ->update(['status' => ApplicationStatus::Completed]);
+        }
+
         $cleaningJobPost->load(['employer', 'category']);
         $cleaningJobPost->loadCount('applications');
 
@@ -243,6 +266,7 @@ class CleaningJobPostController extends Controller
 
         $post = CleaningJobPost::with(['employer', 'category'])
             ->withCount('applications')
+            ->withEmployerRating()
             ->withViewerSaved($viewer)
             ->withViewerApplication($viewer)
             ->findOrFail($id);

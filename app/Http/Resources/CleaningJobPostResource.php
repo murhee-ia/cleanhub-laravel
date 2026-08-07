@@ -34,8 +34,8 @@ class CleaningJobPostResource extends JsonResource
             'employer' => [
                 'id' => $this->employer->id,
                 'name' => $this->employer->name,
-                'rating_average' => null,
-                'rating_count' => 0,
+                'rating_average' => $this->employerRatingAverage(),
+                'rating_count' => $this->employerRatingCount(),
             ],
             'country' => $this->country,
             'city' => $this->city,
@@ -65,6 +65,28 @@ class CleaningJobPostResource extends JsonResource
     protected function formatTime(?string $time): ?string
     {
         return $time === null ? null : substr($time, 0, 5);
+    }
+
+    /**
+     * List endpoints preload this via CleaningJobPost::withEmployerRating() as
+     * a single subquery per page; a freshly created/updated post (store/update)
+     * has no such select, so it falls back to a direct one-off query on the
+     * relation, which costs nothing extra on those single-record responses.
+     */
+    protected function employerRatingAverage(): ?float
+    {
+        $average = array_key_exists('employer_rating_average', $this->resource->getAttributes())
+            ? $this->getAttribute('employer_rating_average')
+            : $this->employer->ratingsReceived()->visible()->avg('stars');
+
+        return $average === null ? null : round((float) $average, 2);
+    }
+
+    protected function employerRatingCount(): int
+    {
+        return array_key_exists('employer_rating_count', $this->resource->getAttributes())
+            ? (int) $this->getAttribute('employer_rating_count')
+            : $this->employer->ratingsReceived()->visible()->count();
     }
 
     /**
