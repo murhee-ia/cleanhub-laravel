@@ -1,5 +1,12 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Admin\AuditLogController;
+use App\Http\Controllers\Api\V1\Admin\CategoryController;
+use App\Http\Controllers\Api\V1\Admin\JobController;
+use App\Http\Controllers\Api\V1\Admin\ModeratorController;
+use App\Http\Controllers\Api\V1\Admin\OverviewController;
+use App\Http\Controllers\Api\V1\Admin\SettingController;
+use App\Http\Controllers\Api\V1\Admin\UserController;
 use App\Http\Controllers\Api\V1\ApplicationController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Api\V1\Auth\LoginController;
@@ -10,10 +17,12 @@ use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
 use App\Http\Controllers\Api\V1\CleaningJobPostController;
 use App\Http\Controllers\Api\V1\JobApplicantController;
+use App\Http\Controllers\Api\V1\Moderation\ReportModerationController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PublicProfileController;
 use App\Http\Controllers\Api\V1\RatingController;
+use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\SavedJobController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -89,6 +98,58 @@ Route::prefix('v1')->group(function (): void {
         Route::get('notifications', [NotificationController::class, 'index']);
         Route::patch('notifications/read-all', [NotificationController::class, 'markAllRead']);
         Route::patch('notifications/{notification}/read', [NotificationController::class, 'markRead']);
+
+        // Filing a report is open to any authenticated user; working the queue
+        // it feeds is not — that lives behind the moderator/admin group below.
+        Route::post('reports', [ReportController::class, 'store']);
+
+        Route::prefix('moderation')->middleware('role:moderator,admin')->group(function (): void {
+            Route::get('reports', [ReportModerationController::class, 'index']);
+            Route::get('reports/{report}', [ReportModerationController::class, 'show'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/resolve', [ReportModerationController::class, 'resolve'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/reject', [ReportModerationController::class, 'reject'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/escalate', [ReportModerationController::class, 'escalate'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/hide', [ReportModerationController::class, 'hide'])
+                ->whereNumber('report');
+            Route::patch('reports/{report}/warn', [ReportModerationController::class, 'warn'])
+                ->whereNumber('report');
+        });
+
+        // Admin panel — the whole group is admin-only. Every destructive action
+        // here is reversible (suspend/reactivate, soft delete/restore, hide/
+        // unhide) and audited, and nothing here can touch the single admin row.
+        Route::prefix('admin')->middleware('role:admin')->group(function (): void {
+            Route::get('overview', [OverviewController::class, 'show']);
+
+            Route::get('users', [UserController::class, 'index']);
+            Route::get('users/{id}', [UserController::class, 'show'])->whereNumber('id');
+            Route::patch('users/{id}/suspend', [UserController::class, 'suspend'])->whereNumber('id');
+            Route::patch('users/{id}/reactivate', [UserController::class, 'reactivate'])->whereNumber('id');
+            Route::patch('users/{id}/role', [UserController::class, 'changeRole'])->whereNumber('id');
+            Route::patch('users/{id}/restore', [UserController::class, 'restore'])->whereNumber('id');
+            Route::delete('users/{id}', [UserController::class, 'destroy'])->whereNumber('id');
+
+            Route::get('jobs', [JobController::class, 'index']);
+            Route::patch('jobs/{cleaningJobPost}/hide', [JobController::class, 'hide'])->whereNumber('cleaningJobPost');
+            Route::patch('jobs/{cleaningJobPost}/unhide', [JobController::class, 'unhide'])->whereNumber('cleaningJobPost');
+
+            Route::get('categories', [CategoryController::class, 'index']);
+            Route::post('categories', [CategoryController::class, 'store']);
+            Route::patch('categories/{category}', [CategoryController::class, 'update'])->whereNumber('category');
+
+            Route::get('moderators', [ModeratorController::class, 'index']);
+            Route::post('moderators', [ModeratorController::class, 'store']);
+            Route::delete('moderators/{id}', [ModeratorController::class, 'destroy'])->whereNumber('id');
+
+            Route::get('settings', [SettingController::class, 'index']);
+            Route::patch('settings', [SettingController::class, 'update']);
+
+            Route::get('audit-logs', [AuditLogController::class, 'index']);
+        });
     });
 
     Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
