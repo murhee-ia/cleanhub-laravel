@@ -101,6 +101,26 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Job posts created by this user (employer role).
+     *
+     * @return HasMany<CleaningJobPost, $this>
+     */
+    public function jobPosts(): HasMany
+    {
+        return $this->hasMany(CleaningJobPost::class, 'employer_id');
+    }
+
+    /**
+     * Applications submitted by this user (cleaner role).
+     *
+     * @return HasMany<Application, $this>
+     */
+    public function applications(): HasMany
+    {
+        return $this->hasMany(Application::class);
+    }
+
+    /**
      * Ratings this user received, either as the cleaner or as the employer of
      * a completed application — the two directions are independent rows on
      * the same table, distinguished only by who the reviewee is.
