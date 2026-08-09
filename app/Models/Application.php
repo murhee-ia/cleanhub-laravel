@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -25,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read User $user
  * @property-read CleaningJobPost $cleaningJobPost
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Rating> $ratings
  */
 #[Fillable([
     'cleaning_job_post_id',
@@ -75,6 +77,14 @@ class Application extends Model
     }
 
     /**
+     * @return HasMany<Rating, $this>
+     */
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(Rating::class);
+    }
+
+    /**
      * Expose the applying cleaner's rating average/count as
      * `cleaner_rating_average`/`cleaner_rating_count` via a single correlated
      * subquery per list, the same single-subquery-per-list approach as
@@ -108,11 +118,17 @@ class Application extends Model
      */
     public function scopeWithViewerHasRated(Builder $query, User $viewer): void
     {
+        /*
+        The same logic with this query builder, the latter one uses the relationship:
         $query->addSelect([
             'viewer_has_rated' => Rating::query()
                 ->selectRaw('count(*) > 0')
                 ->whereColumn('application_id', 'applications.id')
                 ->where('reviewer_id', $viewer->id),
         ]);
+        */
+        $query->withExists(['ratings as viewer_has_rated' => function (Builder $subQuery) use ($viewer): void {
+            $subQuery->where('reviewer_id', $viewer->id);
+        }]);
     }
 }

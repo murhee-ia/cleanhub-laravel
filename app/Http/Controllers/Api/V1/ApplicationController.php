@@ -208,13 +208,19 @@ class ApplicationController extends Controller
         return false;
     }
 
-    protected function timeWindowsOverlap(CleaningJobPost $a, CleaningJobPost $b): bool
+    protected function timeWindowsOverlap(CleaningJobPost $existingJob, CleaningJobPost $targetJob): bool
     {
-        if ($a->start_time === null || $a->end_time === null || $b->start_time === null || $b->end_time === null) {
+        if (
+            $existingJob->start_time === null ||
+            $existingJob->end_time === null ||
+            $targetJob->start_time === null ||
+            $targetJob->end_time === null
+        ) {
             return true;
         }
 
-        return $a->start_time < $b->end_time && $b->start_time < $a->end_time;
+        return $existingJob->start_time < $targetJob->end_time &&
+                $targetJob->start_time < $existingJob->end_time;
     }
 
     /**

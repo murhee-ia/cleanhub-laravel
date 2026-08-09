@@ -54,10 +54,10 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('profile', [ProfileController::class, 'update']);
 
         Route::get('cleaners/{id}', [PublicProfileController::class, 'cleaner']);
+        Route::get('cleaners/{id}/ratings', [RatingController::class, 'forCleaner'])
+            ->whereNumber('id');
         Route::get('employers/{id}', [PublicProfileController::class, 'employer']);
         Route::get('employers/{id}/cleaning-job-posts', [CleaningJobPostController::class, 'forEmployer'])
-            ->whereNumber('id');
-        Route::get('cleaners/{id}/ratings', [RatingController::class, 'forCleaner'])
             ->whereNumber('id');
         Route::get('employers/{id}/ratings', [RatingController::class, 'forEmployer'])
             ->whereNumber('id');

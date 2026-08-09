@@ -62,7 +62,10 @@ class ApplicationResource extends JsonResource
 
         return array_key_exists('viewer_has_rated', $this->resource->getAttributes())
             ? (bool) $this->getAttribute('viewer_has_rated')
-            : Rating::query()->where('application_id', $this->id)->where('reviewer_id', $viewer->id)->exists();
+            : Rating::query()
+                ->where('application_id', $this->id)
+                ->where('reviewer_id', $viewer->id)
+                ->exists();
     }
 
     /**
