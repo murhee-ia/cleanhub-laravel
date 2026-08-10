@@ -74,9 +74,15 @@ class UpdateCleaningJobPostRequest extends FormRequest
     protected function publishedRules(CleaningJobPost $post): array
     {
         $locked = ['prohibited'];
+        $isCompleting = $this->input('status') === JobPostStatus::Completed->value;
 
         return [
             'status' => ['sometimes', Rule::enum(JobPostStatus::class)->except(JobPostStatus::Removed), $this->forwardOnlyStatus($post)],
+            // A proof file (photo or PDF) is required when marking the job completed.
+            // It is forbidden in all other status transitions.
+            'completion_proof' => $isCompleting
+                ? ['required', File::types(['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf'])->max(10 * 1024)]
+                : ['prohibited'],
             'title' => $locked,
             'cleaning_job_category_id' => $locked,
             'description' => $locked,
@@ -105,6 +111,7 @@ class UpdateCleaningJobPostRequest extends FormRequest
         return [
             'prohibited' => 'A published job post is locked; only its status can be changed.',
             'status.prohibited' => "A job post's status cannot be changed until it is published.",
+            'completion_proof.required' => 'A proof file (photo or PDF) is required to mark the job as completed.',
         ];
     }
 

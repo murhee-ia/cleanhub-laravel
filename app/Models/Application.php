@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property ApplicationStatus $status
  * @property string|null $message
  * @property string|null $resume_path
+ * @property string|null $completion_proof_path
  * @property string|null $private_note
  * @property string|null $decision_message
  * @property Carbon|null $created_at
@@ -33,6 +34,7 @@ use Illuminate\Support\Carbon;
     'user_id',
     'message',
     'status',
+    'completion_proof_path',
     'decision_message',
 ])]
 class Application extends Model

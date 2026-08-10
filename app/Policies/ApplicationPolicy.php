@@ -71,4 +71,15 @@ class ApplicationPolicy
     {
         return $user->id === $application->cleaningJobPost->employer_id;
     }
+
+    /**
+     * The cleaner who submitted the application may mark their side of the job
+     * as complete — but only once it has been accepted by the employer. Withdrawn,
+     * rejected, or already-completed applications are not eligible.
+     */
+    public function complete(User $user, Application $application): bool
+    {
+        return $user->id === $application->user_id
+            && $application->status === ApplicationStatus::Accepted;
+    }
 }

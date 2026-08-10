@@ -31,10 +31,14 @@ class ApplicationResource extends JsonResource
             'status' => $this->status->value,
             'message' => $this->message,
             'resume_url' => $this->resume_path === null ? null : Storage::disk('public')->url($this->resume_path),
+            // The cleaner's completion proof URL — visible to both the cleaner and the employer.
+            'completion_proof_url' => $this->completion_proof_path === null ? null : Storage::disk('public')->url($this->completion_proof_path),
             'job' => $this->when(
                 $viewer?->isCleaner() === true,
                 fn (): CleaningJobPostResource => new CleaningJobPostResource($this->cleaningJobPost),
             ),
+            // Indicates whether the employer has also marked the job post as completed.
+            'job_completed' => $this->cleaningJobPost?->status?->value === 'completed',
             'cleaner' => $this->when(
                 $viewer?->isEmployer() === true,
                 fn (): array => $this->cleanerSummary(),
@@ -43,15 +47,34 @@ class ApplicationResource extends JsonResource
             // private_note it is readable by both sides.
             'decision_message' => $this->decision_message,
             'private_note' => $this->when($viewer?->isEmployer() === true, fn (): ?string => $this->private_note),
-            // Only meaningful once the job is completed — that's the only point
-            // either side is allowed to rate the other at all.
+            // Rating unlock is per-side:
+            //   - Cleaner: shown when their application is completed (they can rate the employer)
+            //   - Employer: shown when the job post is completed (they can rate the cleaner)
             'viewer_has_rated' => $this->when(
-                $this->status === ApplicationStatus::Completed,
+                $this->viewerCanRate($viewer),
                 fn (): bool => $this->viewerHasRated($viewer),
             ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    /**
+     * Whether the current viewer has unlocked their side for rating.
+     * Cleaners unlock when their application is completed; employers when the job post is.
+     */
+    protected function viewerCanRate(?User $viewer): bool
+    {
+        if ($viewer === null) {
+            return false;
+        }
+
+        if ($viewer->isCleaner()) {
+            return $this->status === ApplicationStatus::Completed;
+        }
+
+        // Employer side: job post must be completed.
+        return $this->cleaningJobPost?->status?->value === 'completed';
     }
 
     protected function viewerHasRated(?User $viewer): bool

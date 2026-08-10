@@ -79,6 +79,11 @@ Route::prefix('v1')->group(function (): void {
         Route::post('applications', [ApplicationController::class, 'store']);
         Route::delete('applications/{application}', [ApplicationController::class, 'destroy'])
             ->whereNumber('application');
+        // Cleaner marks their side of the job as complete with proof (image/PDF).
+        // Separate from the employer's job-post status update to keep each side
+        // fully independent and focused.
+        Route::post('applications/{application}/complete', [ApplicationController::class, 'complete'])
+            ->whereNumber('application');
 
         Route::get('calendar', [ApplicationController::class, 'calendar']);
 
