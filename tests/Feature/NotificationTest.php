@@ -37,7 +37,16 @@ test('withdrawing an application notifies the employer', function () {
 
     $this->deleteJson("/api/v1/applications/{$application->id}")->assertOk();
 
-    Notification::assertSentTo($employer, ApplicationWithdrawn::class);
+    Notification::assertSentTo(
+        $employer,
+        ApplicationWithdrawn::class,
+        function (ApplicationWithdrawn $notification) use ($cleaner, $employer, $post): bool {
+            $message = $notification->toArray($employer)['message'];
+
+            return $message === "Someone withdrew their application for \"{$post->title}\"."
+                && ! Str::contains($message, $cleaner->name);
+        },
+    );
 });
 
 test('accepting an application notifies the cleaner', function () {
