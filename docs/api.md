@@ -1,9 +1,9 @@
 # CleanHub API Reference
 
-The canonical contract for the CleanHub REST API. If a request/response shape is
-described here, this document is the source of truth — the frontend and any other
-client should map to what is written here rather than re-documenting the wire
-format.
+The canonical contract for the CleanHub REST API. If a request/response shape
+is described here, this document is the source of truth — the frontend and any
+other client should map to what is written here rather than re-documenting the
+wire format.
 
 ---
 
@@ -44,7 +44,9 @@ email-verification link).
 
 - Send `Content-Type: application/json` and `Accept: application/json` on every
   request. The `Accept` header is what guarantees JSON (not HTML) error bodies.
-- All request and response bodies are JSON.
+- Request and response bodies are JSON except file-upload requests, which use
+  `multipart/form-data`. Do not set the multipart boundary manually; the HTTP
+  client/browser must generate it.
 
 ### Standard error shapes
 
@@ -210,7 +212,14 @@ default policy via `Password::defaults()`, and always require a matching
 | `PATCH /api/v1/applications/{id}/accept`             | Bearer token  | Accept an applicant (employer).                     |
 | `PATCH /api/v1/applications/{id}/reject`             | Bearer token  | Reject an applicant (employer).                     |
 | `PATCH /api/v1/applications/{id}/note`               | Bearer token  | Set or clear a private note on an applicant (employer). |
+| `POST /api/v1/applications/{id}/complete`            | Bearer token  | Mark the cleaner's side complete with proof.          |
 | `GET /api/v1/calendar`                               | Bearer token  | A cleaner's accepted/completed jobs.                |
+| `POST /api/v1/ratings`                               | Bearer token  | Rate the other party after completing your side.      |
+| `GET /api/v1/cleaners/{id}/ratings`                  | Bearer token  | List a cleaner's visible reviews.                     |
+| `GET /api/v1/employers/{id}/ratings`                 | Bearer token  | List an employer's visible reviews.                   |
+| `GET /api/v1/notifications`                          | Bearer token  | List the caller's notifications.                      |
+| `PATCH /api/v1/notifications/read-all`               | Bearer token  | Mark all caller notifications read.                   |
+| `PATCH /api/v1/notifications/{id}/read`              | Bearer token  | Mark one caller-owned notification read.              |
 
 ### POST /api/v1/auth/register
 
@@ -586,7 +595,7 @@ by category, location, date, or a free-text search term.
 | `city`           | string  | Exact match.                                                          |
 | `schedule_date`  | date    | Exact match on the post's scheduled date.                            |
 | `status`         | string  | **Employer/moderator/admin only** — see below.                       |
-| `sort`           | string  | `newest` (default), `soonest` (earliest `schedule_date` first), or `top_employer` (falls back to `newest` until employer ratings exist). |
+| `sort`           | string  | `newest` (default), `soonest` (earliest `schedule_date` first), or `top_employer` (highest visible employer rating first; unrated employers last). |
 | `per_page`       | integer | See [Pagination](#pagination).                                       |
 
 **Who sees what:**
@@ -649,9 +658,8 @@ by category, location, date, or a free-text search term.
 
 - `category` is always `{ id, name }` — never a bare id, and no `slug` (that's
   a category-list-only field).
-- `employer.rating_average`/`rating_count` are placeholders (`null`/`0`) until
-  the rating system exists; the field names are already final so nothing shifts
-  under the frontend later.
+- `employer.rating_average`/`rating_count` are calculated from visible ratings.
+  With no visible ratings they are `null`/`0`.
 - `is_saved` and `has_applied` only appear for an authenticated **cleaner**
   viewer — a guest or an employer never sees them (there's nothing to attach
   them to). `has_applied: true` also brings along `application_status`, so the
@@ -769,14 +777,28 @@ Behaves completely differently depending on whether the post is still a draft:
 - **Already published** — every content field is locked (`422` if sent); the
   **only** editable field is `status`, and only forward:
   `open → reviewing → closed → completed`. Sending a status that moves
-  backward, skips the forward check, or targets `removed` (moderator/admin
-  only, done elsewhere) is rejected.
+  backward or targets `removed` (a privileged hide state) is rejected. A post
+  may skip forward to a later lifecycle state. Moving to `completed` additionally
+  requires a `completion_proof` upload. Completing the post records the
+  employer's side only; accepted applications remain `accepted` until their
+  cleaners complete them separately.
 
 **Request body (published post):**
 
 ```json
 { "status": "reviewing" }
 ```
+
+To mark a published post completed, send `multipart/form-data` (a browser may
+use `POST` plus `_method=PATCH` when necessary):
+
+| Field | Type | Required | Rules |
+|---|---|---:|---|
+| `status` | string | yes | `completed` |
+| `completion_proof` | file | yes | JPG, JPEG, PNG, WEBP, GIF, or PDF; max 10 MB |
+
+The proof is stored on the job post but is not currently exposed by
+`CleaningJobPostResource`.
 
 **Success response** — `200 OK` — the updated post.
 
@@ -799,6 +821,9 @@ Behaves completely differently depending on whether the post is still a draft:
     "errors": { "status": ["A job post status can only move forward: open → reviewing → closed → completed."] }
   }
   ```
+
+- `422` — `status: completed` was sent without a valid proof file; the error is
+  returned under `errors.completion_proof`.
 
 ### DELETE /api/v1/cleaning-job-posts/{id}
 
@@ -913,8 +938,10 @@ a brand-new account just gets an all-`null` profile back.
 - `email` only appears when the caller is viewing their **own** profile — see
   [`GET /cleaners/{id}` / `GET /employers/{id}`](#get-apiv1cleanersid) below for
   what a third party sees.
-- `rating_average`/`rating_count`/`posted_jobs_count`/`completed_jobs_count`
-  are placeholders until ratings exist, same as job posts' employer summary.
+- `rating_average` and `rating_count` are calculated from visible ratings.
+  `posted_jobs_count` is live. A cleaner's `completed_jobs_count` counts only
+  relationships where both the application and job post are completed;
+  `EmployerProfileResource.posted_jobs_count` counts only completed job posts.
 
 ### PATCH /api/v1/profile
 
@@ -1095,9 +1122,14 @@ unique slot, so re-applying to the same job after withdrawing is rejected the
 same as any other duplicate.
 
 Status values: `pending` (the only status right after applying) → `accepted` /
-`rejected` (an employer's decision) → `completed` (set once the work is
-finished — see the root project notes on ratings being unlocked by this).
-`withdrawn` is a cleaner-initiated dead end reachable only from `pending`.
+`rejected` (an employer's decision). An accepted cleaner can upload proof and
+move their own application to `completed`. `withdrawn` is a cleaner-initiated
+dead end reachable only from `pending`.
+
+Completion is deliberately independent per side. The cleaner's completion is
+stored on the application; the employer's completion is stored on the job post.
+Either party may complete first, and completing your own side unlocks your own
+rating action without waiting for the other party.
 
 ### GET /api/v1/applications
 
@@ -1116,7 +1148,9 @@ a job that has since closed still shows up here with that reflected.
       "status": "accepted",
       "message": "I have five years of hotel housekeeping experience and can lead a small team.",
       "resume_url": null,
+      "completion_proof_url": null,
       "job": { "id": 8, "title": "Hotel Housekeeping Team", "application_status": "accepted", "has_applied": true, "...": "full job post" },
+      "job_completed": false,
       "decision_message": "You are booked in — see you on site at 8am.",
       "created_at": "2026-08-07T02:08:27.000000Z",
       "updated_at": "2026-08-07T02:08:37.000000Z"
@@ -1165,7 +1199,9 @@ _Sample request body:_
   "status": "pending",
   "message": "I have five years of hotel housekeeping experience and can lead a small team.",
   "resume_url": null,
+  "completion_proof_url": null,
   "job": { "id": 8, "has_applied": true, "application_status": "pending", "...": "full job post" },
+  "job_completed": false,
   "decision_message": null,
   "created_at": "2026-08-07T02:08:27.000000Z",
   "updated_at": "2026-08-07T02:08:27.000000Z"
@@ -1340,6 +1376,38 @@ note gets cleared):
 
 **Success response** — `200 OK` — the updated application, `private_note` set.
 
+### POST /api/v1/applications/{id}/complete
+
+**Auth:** Bearer token, must be the cleaner who submitted the application, and
+the application must currently be `accepted`. Marks only the cleaner's side of
+the relationship complete. It does not change the job post's status.
+
+Send as `multipart/form-data`:
+
+| Field | Type | Required | Rules |
+|---|---|---:|---|
+| `proof` | file | yes | JPG, JPEG, PNG, WEBP, GIF, or PDF; max 10 MB |
+
+**Success response** — `200 OK` — the application with:
+
+- `status: "completed"`;
+- `completion_proof_url` set to the public file URL;
+- `job_completed` indicating whether the employer has independently completed
+  the job post; and
+- `viewer_has_rated: false` until this cleaner submits a rating.
+
+`viewer_has_rated` is conditionally present on application responses only when
+the current viewer's rating action is unlocked: for a cleaner, after the
+application is completed; for the owning employer, after the job post is
+completed. Once that viewer rates, the field becomes `true`.
+
+**Error responses**
+
+- `403` — the caller is not the applying cleaner, or the application is not
+  currently `accepted`.
+- `422` — the proof is missing or has an unsupported type/size; the validation
+  error is under `errors.proof`.
+
 ## Calendar
 
 ### GET /api/v1/calendar
@@ -1360,6 +1428,7 @@ calendar, because nothing has actually been committed to yet.
     "status": "accepted",
     "message": "I have five years of hotel housekeeping experience and can lead a small team.",
     "resume_url": null,
+    "completion_proof_url": null,
     "job": {
       "id": 8,
       "title": "Hotel Housekeeping Team",
@@ -1372,6 +1441,7 @@ calendar, because nothing has actually been committed to yet.
       "application_status": "accepted",
       "...": "full job post"
     },
+    "job_completed": false,
     "decision_message": "You are booked in — see you on site at 8am.",
     "created_at": "2026-08-07T02:08:27.000000Z",
     "updated_at": "2026-08-07T02:08:37.000000Z"
@@ -1384,3 +1454,172 @@ calendar, because nothing has actually been committed to yet.
 - `403` — the caller isn't a cleaner (an employer's own schedule isn't modeled
   this way — they see their commitments through their job posts' applicant
   lists instead).
+
+## Ratings
+
+Ratings are mutual but independent rows. The API derives the reviewee from the
+authenticated party and the application, so clients never submit a
+`reviewee_id`. A unique `(application_id, reviewer_id)` constraint allows one
+cleaner→employer rating and one employer→cleaner rating for the same
+relationship while preventing duplicates in either direction.
+
+Only visible ratings appear in profile review lists or aggregate averages.
+
+### POST /api/v1/ratings
+
+**Auth:** Bearer token, cleaner or employer, and the caller must be one of the
+two parties to the application.
+
+Each party unlocks rating by completing their own side:
+
+- cleaner → employer: the application must be `completed`;
+- employer → cleaner: the job post must be `completed`.
+
+The other party does not have to complete first.
+
+**Request body**
+
+| Field | Type | Required | Rules |
+|---|---|---:|---|
+| `application_id` | integer | yes | existing application involving the caller |
+| `stars` | integer | yes | 1–5 |
+| `text` | string | no | nullable, max 2000 characters |
+
+```json
+{
+  "application_id": 5,
+  "stars": 5,
+  "text": "Clear instructions and a professional experience."
+}
+```
+
+**Success response** — `201 Created`:
+
+```json
+{
+  "id": 12,
+  "application_id": 5,
+  "stars": 5,
+  "text": "Clear instructions and a professional experience.",
+  "reviewer": {
+    "id": 9,
+    "full_name": "Jane Cleaner",
+    "role": "cleaner"
+  },
+  "reviewee": {
+    "id": 8,
+    "full_name": "Maria Employer",
+    "role": "employer"
+  },
+  "other_side_completed": false,
+  "job_post": {
+    "id": 8,
+    "title": "Hotel Housekeeping Team",
+    "schedule_date": "2026-09-15",
+    "city": "Cebu City",
+    "country": "Philippines"
+  },
+  "created_at": "2026-08-14T08:00:00.000000Z"
+}
+```
+
+`other_side_completed` reports whether the party who received this review has
+also completed their side. It provides context only; it does not delay review
+creation or visibility.
+
+**Error responses**
+
+- `403` — the caller is not a cleaner/employer party to the application, or
+  their own side is not complete.
+- `422` — invalid stars/text, or this reviewer already rated this application.
+  A duplicate is reported under `errors.application_id`.
+- `404` — the application does not exist.
+
+### GET /api/v1/cleaners/{id}/ratings
+
+### GET /api/v1/employers/{id}/ratings
+
+**Auth:** Bearer token. Lists the target user's visible reviews, newest first,
+using the standard paginated envelope. `{id}` is the cleaner/employer user id,
+not a profile id.
+
+Each `data` row has the same shape as the rating response above. Hidden ratings
+are excluded from both this list and the target profile's
+`rating_average`/`rating_count`.
+
+**Query parameters**
+
+| Parameter | Type | Rules |
+|---|---|---|
+| `per_page` | integer | optional, 50–200; defaults to 50 |
+
+**Error responses**
+
+- `404` — the id does not exist with the role named by the route.
+
+## Notifications
+
+The notification API exposes application-lifecycle events through Laravel's
+database notification channel. The same notifications are also queued for the
+mail channel. Every response is scoped to the authenticated user's own
+notification relation; another user's notification id resolves as `404`.
+
+Current application notification types are:
+
+| Type | Recipient | Trigger |
+|---|---|---|
+| `new_applicant` | employer | a cleaner successfully applies |
+| `application_accepted` | cleaner | the employer accepts the application |
+| `application_rejected` | cleaner | the employer rejects the application |
+| `application_withdrawn` | employer | the cleaner withdraws while pending |
+| `job_reminder` | cleaner | an accepted job is scheduled for tomorrow |
+
+The `app:send-job-reminders` command runs daily at `08:00` in the application
+timezone. It targets accepted applications scheduled for the next day and
+checks the notifications table before sending, so rerunning it does not create
+a duplicate reminder for the same application.
+
+### GET /api/v1/notifications
+
+**Auth:** Bearer token. Returns the caller's notifications newest first in the
+standard paginated envelope.
+
+**Query parameters**
+
+| Parameter | Type | Rules |
+|---|---|---|
+| `unread_only` | boolean | optional; accepts `1`, `0`, `true`, or `false` |
+| `per_page` | integer | optional, 50–200; defaults to 50 |
+
+**Notification row**
+
+```json
+{
+  "id": "2f0e87a1-7b93-4f55-9f25-a8e49cc80df0",
+  "type": "application_accepted",
+  "message": "Your application for \"Hotel Housekeeping Team\" was accepted.",
+  "application_id": 5,
+  "cleaning_job_post_id": 8,
+  "read_at": null,
+  "created_at": "2026-08-14T08:00:00.000000Z"
+}
+```
+
+The resource flattens the stored notification `data` into the top-level object.
+Clients route clicks using `type`, `application_id`, and
+`cleaning_job_post_id`.
+
+### PATCH /api/v1/notifications/{id}/read
+
+**Auth:** Bearer token. Marks one caller-owned notification read and returns the
+updated notification row. Calling it for another user's UUID returns `404`.
+
+### PATCH /api/v1/notifications/read-all
+
+**Auth:** Bearer token. Marks all of the caller's unread notifications read.
+
+**Success response** — `200 OK`:
+
+```json
+{ "message": "All notifications marked as read." }
+```

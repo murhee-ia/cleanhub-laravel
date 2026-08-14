@@ -31,6 +31,7 @@ outgoing email:
 
 ```bash
 php artisan serve                 # serves http://localhost:8000
+php artisan queue:work            # second terminal; delivers queued mail/database notifications
 ```
 
 Mail uses the **log** driver in local dev (`MAIL_MAILER=log`), so verification
@@ -57,6 +58,8 @@ simpler than digging through the log.
 | Profiles           | `tests/Feature/ProfileTest.php`, `tests/Feature/PublicProfileTest.php` | A profile is created lazily on first access; `email` is owner-only; documents append rather than replace. |
 | Saved jobs         | `tests/Feature/SavedJobTest.php`              | Only open/published jobs can be saved; duplicate saves and cross-user unsaves are rejected; pagination bounds. |
 | Applications & calendar | `tests/Feature/ApplicationTest.php`      | Every apply-rejection rule (closed, duplicate, self-apply, schedule conflict), accept/reject/withdraw transitions, and that the calendar only ever shows accepted/completed jobs. |
+| Ratings            | `tests/Feature/RatingTest.php`              | Independent completion gates, one review per direction, visible-only aggregates/lists, and viewer rating state. |
+| Notifications      | `tests/Feature/NotificationTest.php`        | Lifecycle dispatch, reminder targeting/idempotency, ownership scoping, filtering, and read actions. |
 
 > Run a whole group with its file path (e.g.
 > `php artisan test tests/Feature/Auth/RegistrationTest.php`); narrow to a single
@@ -245,13 +248,13 @@ curl -s -X POST http://localhost:8000/api/v1/auth/login \
 **Expected:** step 1 → `200`; step 2 → `200`; step 3 → `422`; step 4 → `200` with
 a fresh token, proving the new password is live.
 
-### Job posts (browse, post, update, delete)
+### Job posts (browse, publish, and complete)
 
 **What it verifies & why:** the browse feed must default to `open`+`published`
 for everyone but the employer market-watching by status; a post's content must
-be editable while it's a draft and locked once published, with `status` moving
-forward only; and deleting a post must be an admin-only action, not something
-even the owning employer can do.
+be editable while it's a draft and locked once published; status moves forward
+only; and completion requires the employer's proof without cascading accepted
+applications to completed.
 
 **Run just these groups:**
 
@@ -293,25 +296,23 @@ curl -s -X PATCH http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
   -H "Authorization: Bearer EMPLOYER_TOKEN" \
   -d '{"title":"New Title"}'
 
-# 6. Employer tries to delete their own post → expect 403
-curl -s -X DELETE http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
-  -H "Accept: application/json" -H "Authorization: Bearer EMPLOYER_TOKEN"
-
-# 7. Log in as the seeded admin and delete it → expect 200
-curl -s -X POST http://localhost:8000/api/v1/auth/login \
+# 6. Move to closed, then try to complete without proof → expect 422 on completion_proof
+curl -s -X PATCH http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
   -H "Accept: application/json" -H "Content-Type: application/json" \
-  -d '{"email":"admin@cleanhub.test","password":"password"}'
-curl -s -X DELETE http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
-  -H "Accept: application/json" -H "Authorization: Bearer ADMIN_TOKEN"
+  -H "Authorization: Bearer EMPLOYER_TOKEN" -d '{"status":"closed"}'
+curl -s -X PATCH http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer EMPLOYER_TOKEN" -d '{"status":"completed"}'
+
+# 7. Complete with photo/PDF proof → expect 200, status "completed"
+curl -s -X POST http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
+  -H "Accept: application/json" -H "Authorization: Bearer EMPLOYER_TOKEN" \
+  -F '_method=PATCH' -F 'status=completed' -F 'completion_proof=@/absolute/path/to/proof.jpg'
 ```
 
-(`admin@cleanhub.test` / `password` are the local defaults from
-`config/cleanhub.php` — override `ADMIN_EMAIL`/`ADMIN_PASSWORD` in `.env` before
-seeding anywhere real users could reach it.)
-
 **Expected:** step 1 → `201`; step 2 → `200` with the post listed; step 3 →
-`422`; step 4 → `200` with `status: "reviewing"`; step 5 → `422`; step 6 →
-`403`; step 7's login → `200`, then delete → `200`.
+`422`; step 4 → `200` with `status: "reviewing"`; step 5 → `422`; step 6's
+closed transition → `200` and proof-less completion → `422`; step 7 → `200`.
 
 ### Saved jobs
 
@@ -416,6 +417,27 @@ To also exercise withdraw and reject: apply to a fresh job
 have the employer `PATCH /applications/{id}/reject` on a different pending
 application → expect `200` with `status: "rejected"`.
 
+Complete each accepted relationship independently:
+
+```bash
+# Cleaner completes their application side with proof
+curl -s -X POST http://localhost:8000/api/v1/applications/PASTE_APPLICATION_ID/complete \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN" \
+  -F 'proof=@/absolute/path/to/cleaner-proof.jpg'
+
+# Employer completes the job-post side with separate proof
+curl -s -X POST http://localhost:8000/api/v1/cleaning-job-posts/PASTE_JOB_ID \
+  -H "Accept: application/json" -H "Authorization: Bearer EMPLOYER_TOKEN" \
+  -F '_method=PATCH' -F 'status=completed' \
+  -F 'completion_proof=@/absolute/path/to/employer-proof.pdf'
+```
+
+The first response must show `application.status: "completed"`; the second
+must show `job.status: "completed"`. Either can happen first, and neither
+updates the other's status. The proof-upload completion endpoint is part of the
+manual pass; the current application feature test primarily covers applying,
+decisions, calendar behavior, and conflicts.
+
 ### Profiles
 
 **What it verifies & why:** a profile exists (as an empty object) the first
@@ -451,3 +473,98 @@ curl -s http://localhost:8000/api/v1/cleaners/PASTE_CLEANER_USER_ID \
 **Expected:** step 1 → `200`; step 2 → `200` reflecting the new values,
 `cleaning_categories` expanded to `{id, name, slug}` objects; step 3 → `200`
 with every field from step 2 except `email`.
+
+### Ratings
+
+**What it verifies & why:** only the two parties can review each other, each
+party unlocks rating by completing their own side, duplicate ratings are
+blocked independently per reviewer, hidden rows do not affect public lists or
+averages, and application responses persist `viewer_has_rated` state.
+
+**Run just this group:**
+
+```bash
+php artisan test tests/Feature/RatingTest.php
+```
+
+**Reproduce by hand** — use the accepted relationship completed on both sides
+in the previous section:
+
+```bash
+# 1. Cleaner rates employer → expect 201
+curl -s -X POST http://localhost:8000/api/v1/ratings \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer CLEANER_TOKEN" \
+  -d '{"application_id":PASTE_APPLICATION_ID,"stars":5,"text":"Clear instructions and professional communication."}'
+
+# 2. Same cleaner rates the same application again → expect 422 on application_id
+curl -s -X POST http://localhost:8000/api/v1/ratings \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer CLEANER_TOKEN" \
+  -d '{"application_id":PASTE_APPLICATION_ID,"stars":4}'
+
+# 3. Employer rates cleaner independently → expect 201
+curl -s -X POST http://localhost:8000/api/v1/ratings \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer EMPLOYER_TOKEN" \
+  -d '{"application_id":PASTE_APPLICATION_ID,"stars":5}'
+
+# 4. List visible reviews and inspect aggregate profile fields
+curl -s http://localhost:8000/api/v1/cleaners/PASTE_CLEANER_USER_ID/ratings \
+  -H "Accept: application/json" -H "Authorization: Bearer EMPLOYER_TOKEN"
+curl -s http://localhost:8000/api/v1/cleaners/PASTE_CLEANER_USER_ID \
+  -H "Accept: application/json" -H "Authorization: Bearer EMPLOYER_TOKEN"
+```
+
+**Expected:** steps 1 and 3 create separate rating rows; step 2 is rejected;
+step 4 returns the employer's review in the paginated list and reflects it in
+`rating_average`/`rating_count`.
+
+To verify independent gating, repeat with only the cleaner's application side
+completed: the cleaner may rate, while the employer receives `403` until the
+job post is completed. Reverse the setup to verify the opposite direction.
+
+### Notifications
+
+**What it verifies & why:** application actions notify the correct party,
+tomorrow's accepted-job reminder is targeted and idempotent, notification lists
+are caller-scoped, `unread_only` is validated, and one/all read operations
+cannot affect another user.
+
+**Run just this group:**
+
+```bash
+php artisan test tests/Feature/NotificationTest.php
+```
+
+**Reproduce by hand:** keep `php artisan queue:work` running, then apply,
+accept/reject, or withdraw using the earlier commands. After the queue handles
+the job:
+
+```bash
+# 1. List every notification → paginated { data, links, meta }
+curl -s http://localhost:8000/api/v1/notifications \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+
+# 2. List only unread notifications
+curl -s 'http://localhost:8000/api/v1/notifications?unread_only=1' \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+
+# 3. Mark one caller-owned UUID read
+curl -s -X PATCH http://localhost:8000/api/v1/notifications/PASTE_NOTIFICATION_UUID/read \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+
+# 4. Mark every remaining notification read
+curl -s -X PATCH http://localhost:8000/api/v1/notifications/read-all \
+  -H "Accept: application/json" -H "Authorization: Bearer CLEANER_TOKEN"
+
+# 5. Manually run tomorrow's reminder scan twice
+php artisan app:send-job-reminders
+php artisan app:send-job-reminders
+```
+
+**Expected:** application acceptance/rejection reaches the cleaner; new apply
+and withdrawal reach the employer. Step 3 sets `read_at`; step 4 returns
+`{"message":"All notifications marked as read."}`; the second reminder-command
+run sends no duplicate for the same accepted application. The scheduler invokes
+the reminder command daily at `08:00` in the configured application timezone.
