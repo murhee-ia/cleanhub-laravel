@@ -54,10 +54,10 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('profile', [ProfileController::class, 'update']);
 
         Route::get('cleaners/{id}', [PublicProfileController::class, 'cleaner']);
+        Route::get('cleaners/{id}/ratings', [RatingController::class, 'forCleaner'])
+            ->whereNumber('id');
         Route::get('employers/{id}', [PublicProfileController::class, 'employer']);
         Route::get('employers/{id}/cleaning-job-posts', [CleaningJobPostController::class, 'forEmployer'])
-            ->whereNumber('id');
-        Route::get('cleaners/{id}/ratings', [RatingController::class, 'forCleaner'])
             ->whereNumber('id');
         Route::get('employers/{id}/ratings', [RatingController::class, 'forEmployer'])
             ->whereNumber('id');
@@ -78,6 +78,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('applications', [ApplicationController::class, 'index']);
         Route::post('applications', [ApplicationController::class, 'store']);
         Route::delete('applications/{application}', [ApplicationController::class, 'destroy'])
+            ->whereNumber('application');
+        // Cleaner marks their side of the job as complete with proof (image/PDF).
+        // Separate from the employer's job-post status update to keep each side
+        // fully independent and focused.
+        Route::post('applications/{application}/complete', [ApplicationController::class, 'complete'])
             ->whereNumber('application');
 
         Route::get('calendar', [ApplicationController::class, 'calendar']);

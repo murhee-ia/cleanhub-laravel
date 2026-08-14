@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\JobPostStatus;
 use App\Models\EmployerProfile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -36,7 +37,7 @@ class EmployerProfileResource extends JsonResource
             'documents' => $this->mapDocuments(),
             'rating_average' => $this->ratingAverage(),
             'rating_count' => $this->ratingCount(),
-            'posted_jobs_count' => 0,
+            'posted_jobs_count' => $this->user->jobPosts()->where('status', '!=', JobPostStatus::Removed->value)->count(),
             'completed_jobs_count' => 0,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

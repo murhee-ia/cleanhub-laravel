@@ -36,6 +36,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $pay_amount
  * @property string|null $pay_currency
  * @property array<int, array{name: string, path: string}>|null $media
+ * @property string|null $completion_proof_path
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
@@ -61,6 +62,7 @@ use Illuminate\Support\Carbon;
     'pay_amount',
     'pay_currency',
     'media',
+    'completion_proof_path',
 ])]
 class CleaningJobPost extends Model
 {

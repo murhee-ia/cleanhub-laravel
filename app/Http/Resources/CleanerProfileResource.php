@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\ApplicationStatus;
+use App\Enums\JobPostStatus;
 use App\Models\CleanerProfile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -36,7 +38,10 @@ class CleanerProfileResource extends JsonResource
             'documents' => $this->mapDocuments(),
             'rating_average' => $this->ratingAverage(),
             'rating_count' => $this->ratingCount(),
-            'completed_jobs_count' => 0,
+            'completed_jobs_count' => $this->user->applications()
+                ->where('status', ApplicationStatus::Completed)
+                ->whereHas('cleaningJobPost', fn ($q) => $q->where('status', JobPostStatus::Completed))
+                ->count(),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

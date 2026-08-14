@@ -10,6 +10,7 @@ use App\Notifications\Applications\ApplicationWithdrawn;
 use App\Notifications\Applications\JobReminder;
 use App\Notifications\Applications\NewApplicant;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 
 test('applying to a job notifies the employer', function () {
@@ -35,7 +36,16 @@ test('withdrawing an application notifies the employer', function () {
 
     $this->deleteJson("/api/v1/applications/{$application->id}")->assertOk();
 
-    Notification::assertSentTo($employer, ApplicationWithdrawn::class);
+    Notification::assertSentTo(
+        $employer,
+        ApplicationWithdrawn::class,
+        function (ApplicationWithdrawn $notification) use ($cleaner, $employer, $post): bool {
+            $message = $notification->toArray($employer)['message'];
+
+            return $message === "Someone withdrew their application for \"{$post->title}\"."
+                && ! Str::contains($message, $cleaner->name);
+        },
+    );
 });
 
 test('accepting an application notifies the cleaner', function () {
@@ -100,15 +110,46 @@ test("a user's notification list only contains their own, newest first", functio
     $this->getJson('/api/v1/notifications')->assertOk()->assertJsonCount(2, 'data');
 });
 
-test('unread_only narrows the list to notifications not yet read', function () {
+test('unread_only narrows the list to notifications not yet read', function (string $unreadOnly) {
     $cleaner = User::factory()->cleaner()->create();
     $cleaner->notify(new JobReminder(Application::factory()->create(['user_id' => $cleaner->id])));
     $cleaner->notify(new JobReminder(Application::factory()->create(['user_id' => $cleaner->id])));
     $cleaner->unreadNotifications()->first()->markAsRead();
     Sanctum::actingAs($cleaner);
 
-    $this->getJson('/api/v1/notifications?unread_only=1')->assertOk()->assertJsonCount(1, 'data');
-});
+    $this->getJson("/api/v1/notifications?unread_only={$unreadOnly}")
+        ->assertOk()
+        ->assertJsonCount(1, 'data');
+})->with([
+    'integer query flag' => '1',
+    'boolean query flag' => 'true',
+]);
+
+test('unread_only false includes read notifications', function (string $unreadOnly) {
+    $cleaner = User::factory()->cleaner()->create();
+    $cleaner->notify(new JobReminder(Application::factory()->create(['user_id' => $cleaner->id])));
+    $cleaner->notifications()->first()->markAsRead();
+    Sanctum::actingAs($cleaner);
+
+    $this->getJson("/api/v1/notifications?unread_only={$unreadOnly}")
+        ->assertOk()
+        ->assertJsonCount(1, 'data');
+})->with([
+    'integer query flag' => '0',
+    'boolean query flag' => 'false',
+]);
+
+test('unread_only rejects an invalid boolean value', function (string $unreadOnly) {
+    Sanctum::actingAs(User::factory()->cleaner()->create());
+
+    $this->getJson("/api/v1/notifications?unread_only={$unreadOnly}")
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('unread_only');
+})->with([
+    'arbitrary string' => 'not-a-boolean',
+    'truthy word' => 'yes',
+    'on value' => 'on',
+]);
 
 test("a user can mark their own notification as read but not another user's", function () {
     $cleaner = User::factory()->cleaner()->create();

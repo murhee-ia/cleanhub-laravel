@@ -22,6 +22,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -158,6 +159,36 @@ class ApplicationController extends Controller
     }
 
     /**
+     * The cleaner marks their side of the job complete by uploading a proof file
+     * (photo or PDF). This is independent of the employer marking the job post
+     * complete — either side may complete their side first, and rating unlocks
+     * for each reviewer once *their own* side is done. Requires the application
+     * to be in the `accepted` state (enforced by the policy).
+     */
+    public function complete(Request $request, Application $application): ApplicationResource
+    {
+        Gate::authorize('complete', $application);
+
+        $request->validate([
+            'proof' => [
+                'required',
+                File::types(['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf'])->max(10 * 1024),
+            ],
+        ], [
+            'proof.required' => 'A proof file (photo or PDF) is required to mark the job as complete.',
+        ]);
+
+        $application->completion_proof_path = $this->storeProof($request->file('proof'));
+        $application->status = ApplicationStatus::Completed;
+        $application->save();
+
+        $application->load(['cleaningJobPost.employer', 'cleaningJobPost.category']);
+        $this->attachViewerFlags(new Collection([$application]), $request->user());
+
+        return new ApplicationResource($application);
+    }
+
+    /**
      * The embedded job posts are loaded through the application, so the viewer
      * flags CleaningJobPostResource reads are not set by a query scope here.
      * Every job in this list is applied to by the viewer by definition; saved
@@ -208,13 +239,33 @@ class ApplicationController extends Controller
         return false;
     }
 
-    protected function timeWindowsOverlap(CleaningJobPost $a, CleaningJobPost $b): bool
+    protected function timeWindowsOverlap(CleaningJobPost $existingJob, CleaningJobPost $targetJob): bool
     {
-        if ($a->start_time === null || $a->end_time === null || $b->start_time === null || $b->end_time === null) {
+        if (
+            $existingJob->start_time === null ||
+            $existingJob->end_time === null ||
+            $targetJob->start_time === null ||
+            $targetJob->end_time === null
+        ) {
             return true;
         }
 
-        return $a->start_time < $b->end_time && $b->start_time < $a->end_time;
+        return $existingJob->start_time < $targetJob->end_time &&
+                $targetJob->start_time < $existingJob->end_time;
+    }
+
+    /**
+     * Store an uploaded proof file (photo or PDF) on the public disk.
+     */
+    protected function storeProof(UploadedFile $file): string
+    {
+        $path = $file->store('application-proofs', 'public');
+
+        if ($path === false) {
+            throw new RuntimeException('Failed to store uploaded proof file.');
+        }
+
+        return $path;
     }
 
     /**

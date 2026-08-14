@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\IndexNotificationRequest;
 use App\Http\Resources\NotificationResource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -16,12 +17,9 @@ class NotificationController extends Controller
      * `unread_only` powers both the bell's badge count and its dropdown list
      * with the same endpoint, just a different query string.
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(IndexNotificationRequest $request): AnonymousResourceCollection
     {
-        $validated = $request->validate([
-            'unread_only' => ['sometimes', 'boolean'],
-            'per_page' => $this->perPageRule(),
-        ]);
+        $validated = $request->validated();
 
         $notifications = $request->user()->notifications()
             ->when(

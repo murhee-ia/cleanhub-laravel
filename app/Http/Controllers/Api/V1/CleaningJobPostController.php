@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Enums\ApplicationStatus;
 use App\Enums\JobPostStatus;
 use App\Enums\JobPostVisibility;
 use App\Enums\UserRole;
@@ -213,29 +212,26 @@ class CleaningJobPostController extends Controller
     /**
      * Update a job post owned by the authenticated employer. Only the fields
      * present are changed; uploaded media replaces the existing set.
+     *
+     * When transitioning to `completed`, the employer must upload a proof file
+     * (validated in UpdateCleaningJobPostRequest). Accepted applications are NOT
+     * automatically flipped to `completed` — each cleaner marks their own side
+     * independently via POST /applications/{id}/complete.
      */
     public function update(UpdateCleaningJobPostRequest $request, CleaningJobPost $cleaningJobPost): CleaningJobPostResource
     {
-        $wasCompleted = $cleaningJobPost->status === JobPostStatus::Completed;
-
-        $cleaningJobPost->fill($request->safe()->except('media'));
+        $cleaningJobPost->fill($request->safe()->except(['media', 'completion_proof']));
 
         if ($request->hasFile('media')) {
             $cleaningJobPost->media = $this->storeMedia($request->file('media'));
         }
 
-        $cleaningJobPost->save();
-
-        // Completing a post is what unlocks rating: every accepted applicant
-        // moves to `completed` alongside it, so each side has a completed
-        // application to rate the other about. Applications the employer never
-        // accepted (rejected/withdrawn) are not part of the completed job and
-        // stay as they are.
-        if (! $wasCompleted && $cleaningJobPost->status === JobPostStatus::Completed) {
-            $cleaningJobPost->applications()
-                ->where('status', ApplicationStatus::Accepted)
-                ->update(['status' => ApplicationStatus::Completed]);
+        // Store the employer's proof when they complete the job post.
+        if ($request->hasFile('completion_proof')) {
+            $cleaningJobPost->completion_proof_path = $this->storeOrFail($request->file('completion_proof'));
         }
+
+        $cleaningJobPost->save();
 
         $cleaningJobPost->load(['employer', 'category']);
         $cleaningJobPost->loadCount('applications');

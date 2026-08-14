@@ -17,8 +17,7 @@ class ApplicationWithdrawn extends ApplicationNotification
     protected function message(): string
     {
         return sprintf(
-            '%s withdrew their application for "%s".',
-            $this->application->user->name,
+            'Someone withdrew their application for "%s".',
             $this->application->cleaningJobPost->title,
         );
     }

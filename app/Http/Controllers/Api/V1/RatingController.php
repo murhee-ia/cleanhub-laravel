@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\ApplicationStatus;
+use App\Enums\JobPostStatus;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRatingRequest;
@@ -18,11 +19,13 @@ use Illuminate\Validation\ValidationException;
 class RatingController extends Controller
 {
     /**
-     * Rate the other party of an application, once the job is completed. Both
-     * directions (cleaner→employer and employer→cleaner) are independent rows,
-     * so either party may call this once the application reaches `completed` —
-     * a job post only reaches that status after the employer marks it done,
-     * which is also what moves its accepted applications to `completed`.
+     * Rate the other party of a job, once the reviewer's own side is completed.
+     * Each side unlocks independently:
+     *   - Cleaner rating the employer: their application must be `completed`
+     *   - Employer rating the cleaner: the job post must be `completed`
+     *
+     * The policy enforces this per-role; the controller only handles the
+     * duplicate-review guard and the reviewee derivation.
      */
     public function store(StoreRatingRequest $request): RatingResource
     {
@@ -30,14 +33,24 @@ class RatingController extends Controller
 
         Gate::authorize('review', [Rating::class, $application]);
 
-        if ($application->status !== ApplicationStatus::Completed) {
+        $reviewerId = $request->user()->id;
+        $isCleaner = $request->user()->isCleaner();
+
+        // Role-aware completion guard (policy already enforces this, but an
+        // explicit check here produces a clearer 422 message for API clients).
+        if ($isCleaner && $application->status !== ApplicationStatus::Completed) {
             throw ValidationException::withMessages([
-                'application_id' => 'You can only rate a job once it is completed.',
+                'application_id' => 'You can only rate the employer after marking your application as complete.',
             ]);
         }
 
-        $reviewerId = $request->user()->id;
-        $revieweeId = $reviewerId === $application->user_id
+        if (! $isCleaner && $application->cleaningJobPost->status !== JobPostStatus::Completed) {
+            throw ValidationException::withMessages([
+                'application_id' => 'You can only rate a cleaner after marking the job post as completed.',
+            ]);
+        }
+
+        $revieweeId = $isCleaner
             ? $application->cleaningJobPost->employer_id
             : $application->user_id;
 
@@ -60,7 +73,7 @@ class RatingController extends Controller
             'text' => $request->validated('text'),
         ]);
 
-        $rating->load('reviewer');
+        $rating->load(['reviewer', 'reviewee', 'application.cleaningJobPost']);
 
         return new RatingResource($rating);
     }
@@ -94,7 +107,7 @@ class RatingController extends Controller
         $ratings = Rating::query()
             ->where('reviewee_id', $reviewee->id)
             ->visible()
-            ->with('reviewer')
+            ->with(['reviewer', 'reviewee', 'application.cleaningJobPost'])
             ->latest()
             ->paginate($validated['per_page'] ?? 50);
 
