@@ -55,17 +55,25 @@ test('media on a draft post is replaced on update', function () {
 });
 
 test('a published post can advance its status forward', function () {
+    Storage::fake('public');
     $employer = User::factory()->employer()->create();
     $post = CleaningJobPost::factory()->create(['employer_id' => $employer->id]); // published + open
 
     Sanctum::actingAs($employer);
 
-    $this->patchJson("/api/v1/cleaning-job-posts/{$post->id}", ['status' => 'completed'])
+    $this->post("/api/v1/cleaning-job-posts/{$post->id}", [
+        '_method' => 'PATCH',
+        'status' => 'completed',
+        'completion_proof' => UploadedFile::fake()->image('proof.jpg'),
+    ])
         ->assertOk()
         ->assertJsonPath('status', 'completed');
+
+    Storage::disk('public')->assertExists($post->refresh()->completion_proof_path);
 });
 
-test('completing a post moves its accepted applications to completed but leaves other statuses alone', function () {
+test('completing a post leaves application statuses unchanged', function () {
+    Storage::fake('public');
     $employer = User::factory()->employer()->create();
     $post = CleaningJobPost::factory()->create(['employer_id' => $employer->id]);
     $accepted = Application::factory()->status(ApplicationStatus::Accepted)->create(['cleaning_job_post_id' => $post->id]);
@@ -74,11 +82,15 @@ test('completing a post moves its accepted applications to completed but leaves 
 
     Sanctum::actingAs($employer);
 
-    $this->patchJson("/api/v1/cleaning-job-posts/{$post->id}", ['status' => 'completed'])
+    $this->post("/api/v1/cleaning-job-posts/{$post->id}", [
+        '_method' => 'PATCH',
+        'status' => 'completed',
+        'completion_proof' => UploadedFile::fake()->image('proof.jpg'),
+    ])
         ->assertOk()
         ->assertJsonPath('status', 'completed');
 
-    expect($accepted->refresh()->status)->toBe(ApplicationStatus::Completed);
+    expect($accepted->refresh()->status)->toBe(ApplicationStatus::Accepted);
     expect($rejected->refresh()->status)->toBe(ApplicationStatus::Rejected);
     expect($withdrawn->refresh()->status)->toBe(ApplicationStatus::Withdrawn);
 });
@@ -95,6 +107,7 @@ test('content edits on a published post are rejected', function () {
 });
 
 test('a closed post cannot reopen but can complete', function () {
+    Storage::fake('public');
     $employer = User::factory()->employer()->create();
     $post = CleaningJobPost::factory()->status(JobPostStatus::Closed)->create(['employer_id' => $employer->id]);
 
@@ -103,7 +116,11 @@ test('a closed post cannot reopen but can complete', function () {
     $this->patchJson("/api/v1/cleaning-job-posts/{$post->id}", ['status' => 'open'])
         ->assertStatus(422)->assertJsonValidationErrors('status');
 
-    $this->patchJson("/api/v1/cleaning-job-posts/{$post->id}", ['status' => 'completed'])
+    $this->post("/api/v1/cleaning-job-posts/{$post->id}", [
+        '_method' => 'PATCH',
+        'status' => 'completed',
+        'completion_proof' => UploadedFile::fake()->image('proof.jpg'),
+    ])
         ->assertOk()->assertJsonPath('status', 'completed');
 });
 

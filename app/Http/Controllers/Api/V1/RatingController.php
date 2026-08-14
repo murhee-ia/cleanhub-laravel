@@ -67,10 +67,10 @@ class RatingController extends Controller
 
         $rating = Rating::create([
             'application_id' => $application->id,
-            'reviewer_id'    => $reviewerId,
-            'reviewee_id'    => $revieweeId,
-            'stars'          => $request->validated('stars'),
-            'text'           => $request->validated('text'),
+            'reviewer_id' => $reviewerId,
+            'reviewee_id' => $revieweeId,
+            'stars' => $request->validated('stars'),
+            'text' => $request->validated('text'),
         ]);
 
         $rating->load(['reviewer', 'reviewee', 'application.cleaningJobPost']);

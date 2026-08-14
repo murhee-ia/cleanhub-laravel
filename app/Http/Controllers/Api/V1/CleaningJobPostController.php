@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Enums\ApplicationStatus;
 use App\Enums\JobPostStatus;
 use App\Enums\JobPostVisibility;
 use App\Enums\UserRole;

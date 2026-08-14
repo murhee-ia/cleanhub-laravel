@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Enums\ApplicationStatus;
+use App\Enums\JobPostStatus;
 use App\Models\Application;
 use App\Models\Rating;
 use App\Models\User;
@@ -38,7 +39,7 @@ class ApplicationResource extends JsonResource
                 fn (): CleaningJobPostResource => new CleaningJobPostResource($this->cleaningJobPost),
             ),
             // Indicates whether the employer has also marked the job post as completed.
-            'job_completed' => $this->cleaningJobPost?->status?->value === 'completed',
+            'job_completed' => $this->cleaningJobPost->status === JobPostStatus::Completed,
             'cleaner' => $this->when(
                 $viewer?->isEmployer() === true,
                 fn (): array => $this->cleanerSummary(),
@@ -74,7 +75,7 @@ class ApplicationResource extends JsonResource
         }
 
         // Employer side: job post must be completed.
-        return $this->cleaningJobPost?->status?->value === 'completed';
+        return $this->cleaningJobPost->status === JobPostStatus::Completed;
     }
 
     protected function viewerHasRated(?User $viewer): bool

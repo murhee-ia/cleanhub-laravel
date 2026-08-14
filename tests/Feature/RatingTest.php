@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ApplicationStatus;
+use App\Enums\JobPostStatus;
 use App\Enums\RatingStatus;
 use App\Models\Application;
 use App\Models\CleaningJobPost;
@@ -38,8 +39,10 @@ test('a cleaner can rate the employer of a completed job', function () {
 test('an employer can rate the cleaner of a completed job', function () {
     $employer = User::factory()->employer()->create();
     $cleaner = User::factory()->cleaner()->create();
-    $post = CleaningJobPost::factory()->create(['employer_id' => $employer->id]);
-    $application = Application::factory()->status(ApplicationStatus::Completed)->create([
+    $post = CleaningJobPost::factory()->status(JobPostStatus::Completed)->create([
+        'employer_id' => $employer->id,
+    ]);
+    $application = Application::factory()->status(ApplicationStatus::Accepted)->create([
         'cleaning_job_post_id' => $post->id,
         'user_id' => $cleaner->id,
     ]);
@@ -54,7 +57,7 @@ test('an employer can rate the cleaner of a completed job', function () {
     expect($rating->reviewee_id)->toBe($cleaner->id);
 });
 
-test('a rating is rejected before the job is completed', function (ApplicationStatus $status) {
+test('a cleaner cannot rate before completing their application', function (ApplicationStatus $status) {
     $cleaner = User::factory()->cleaner()->create();
     $post = CleaningJobPost::factory()->create();
     $application = Application::factory()->status($status)->create([
@@ -64,8 +67,7 @@ test('a rating is rejected before the job is completed', function (ApplicationSt
     Sanctum::actingAs($cleaner);
 
     $this->postJson('/api/v1/ratings', ['application_id' => $application->id, 'stars' => 5])
-        ->assertStatus(422)
-        ->assertJsonValidationErrors('application_id');
+        ->assertForbidden();
 
     expect(Rating::count())->toBe(0);
 })->with([ApplicationStatus::Pending, ApplicationStatus::Accepted, ApplicationStatus::Rejected, ApplicationStatus::Withdrawn]);
@@ -91,7 +93,9 @@ test('a reviewer cannot rate the same completed application twice', function () 
 test('both directions of the same completed application can be rated independently', function () {
     $employer = User::factory()->employer()->create();
     $cleaner = User::factory()->cleaner()->create();
-    $post = CleaningJobPost::factory()->create(['employer_id' => $employer->id]);
+    $post = CleaningJobPost::factory()->status(JobPostStatus::Completed)->create([
+        'employer_id' => $employer->id,
+    ]);
     $application = Application::factory()->status(ApplicationStatus::Completed)->create([
         'cleaning_job_post_id' => $post->id,
         'user_id' => $cleaner->id,
@@ -204,7 +208,9 @@ test('a guest cannot submit or list ratings', function () {
 test("an application's viewer_has_rated flag flips after the viewer submits, independently per side", function () {
     $employer = User::factory()->employer()->create();
     $cleaner = User::factory()->cleaner()->create();
-    $post = CleaningJobPost::factory()->create(['employer_id' => $employer->id]);
+    $post = CleaningJobPost::factory()->status(JobPostStatus::Completed)->create([
+        'employer_id' => $employer->id,
+    ]);
     $application = Application::factory()->status(ApplicationStatus::Completed)->create([
         'cleaning_job_post_id' => $post->id,
         'user_id' => $cleaner->id,

@@ -22,8 +22,8 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rules\File;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 class ApplicationController extends Controller
@@ -257,7 +257,7 @@ class ApplicationController extends Controller
     /**
      * Store an uploaded proof file (photo or PDF) on the public disk.
      */
-    protected function storeProof(\Illuminate\Http\UploadedFile $file): string
+    protected function storeProof(UploadedFile $file): string
     {
         $path = $file->store('application-proofs', 'public');
 
