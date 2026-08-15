@@ -124,24 +124,29 @@ class OverviewController extends Controller
             ],
             'priority_jobs' => $priorityJobs->map(fn (CleaningJobPost $job): array => $this->jobData($job))->values(),
             'upcoming_jobs' => $upcomingJobs->map(fn (CleaningJobPost $job): array => $this->jobData($job))->values(),
-            'recent_applications' => $recentApplications->map(fn (Application $application): array => [
-                'id' => $application->id,
-                'status' => $application->status->value,
-                'created_at' => $application->created_at,
-                'cleaner' => [
-                    'id' => $application->user->id,
-                    'name' => $application->user->name,
-                    'rating_average' => $application->cleaner_rating_average !== null
-                        ? round((float) $application->cleaner_rating_average, 1)
-                        : null,
-                    'rating_count' => (int) ($application->cleaner_rating_count ?? 0),
-                ],
-                'job' => [
-                    'id' => $application->cleaningJobPost->id,
-                    'title' => $application->cleaningJobPost->title,
-                    'schedule_date' => $application->cleaningJobPost->schedule_date?->toDateString(),
-                ],
-            ])->values(),
+            'recent_applications' => $recentApplications->map(function (Application $application): array {
+                /** @var float|int|string|null $ratingAverage */
+                $ratingAverage = $application->getAttribute('cleaner_rating_average');
+
+                return [
+                    'id' => $application->id,
+                    'status' => $application->status->value,
+                    'created_at' => $application->created_at,
+                    'cleaner' => [
+                        'id' => $application->user->id,
+                        'name' => $application->user->name,
+                        'rating_average' => $ratingAverage !== null
+                            ? round((float) $ratingAverage, 1)
+                            : null,
+                        'rating_count' => (int) $application->getAttribute('cleaner_rating_count'),
+                    ],
+                    'job' => [
+                        'id' => $application->cleaningJobPost->id,
+                        'title' => $application->cleaningJobPost->title,
+                        'schedule_date' => $application->cleaningJobPost->schedule_date->toDateString(),
+                    ],
+                ];
+            })->values(),
             'performance' => $this->performance($employer, $range, $periodStart),
             'reputation' => [
                 'average_rating' => $this->averageRating($employer),
@@ -175,9 +180,17 @@ class OverviewController extends Controller
             ->selectRaw('sum(case when visibility = ? and status = ? then 1 else 0 end) as closed', [JobPostVisibility::Published->value, JobPostStatus::Closed->value])
             ->selectRaw('sum(case when visibility = ? and status = ? then 1 else 0 end) as completed', [JobPostVisibility::Published->value, JobPostStatus::Completed->value])
             ->selectRaw('sum(case when status = ? then 1 else 0 end) as removed', [JobPostStatus::Removed->value])
-            ->first();
+            ->firstOrFail();
 
-        return $this->integerCounts($counts, ['total', 'draft', 'open', 'reviewing', 'closed', 'completed', 'removed']);
+        return [
+            'total' => (int) $counts->getAttribute('total'),
+            'draft' => (int) $counts->getAttribute('draft'),
+            'open' => (int) $counts->getAttribute('open'),
+            'reviewing' => (int) $counts->getAttribute('reviewing'),
+            'closed' => (int) $counts->getAttribute('closed'),
+            'completed' => (int) $counts->getAttribute('completed'),
+            'removed' => (int) $counts->getAttribute('removed'),
+        ];
     }
 
     /**
@@ -194,9 +207,16 @@ class OverviewController extends Controller
             ->selectRaw('sum(case when status = ? then 1 else 0 end) as rejected', [ApplicationStatus::Rejected->value])
             ->selectRaw('sum(case when status = ? then 1 else 0 end) as withdrawn', [ApplicationStatus::Withdrawn->value])
             ->selectRaw('sum(case when status = ? then 1 else 0 end) as completed', [ApplicationStatus::Completed->value])
-            ->first();
+            ->firstOrFail();
 
-        return $this->integerCounts($counts, ['total', 'pending', 'accepted', 'rejected', 'withdrawn', 'completed']);
+        return [
+            'total' => (int) $counts->getAttribute('total'),
+            'pending' => (int) $counts->getAttribute('pending'),
+            'accepted' => (int) $counts->getAttribute('accepted'),
+            'rejected' => (int) $counts->getAttribute('rejected'),
+            'withdrawn' => (int) $counts->getAttribute('withdrawn'),
+            'completed' => (int) $counts->getAttribute('completed'),
+        ];
     }
 
     private function unratedCleanersCount(User $employer): int
@@ -315,10 +335,10 @@ class OverviewController extends Controller
         return [
             'id' => $job->id,
             'title' => $job->title,
-            'category' => $job->category?->name,
+            'category' => $job->category->name,
             'city' => $job->city,
             'country' => $job->country,
-            'schedule_date' => $job->schedule_date?->toDateString(),
+            'schedule_date' => $job->schedule_date->toDateString(),
             'application_deadline' => $job->application_deadline?->toDateString(),
             'visibility' => $job->visibility->value,
             'status' => $job->status->value,
@@ -334,16 +354,5 @@ class OverviewController extends Controller
         $average = Rating::query()->visible()->where('reviewee_id', $employer->id)->avg('stars');
 
         return $average !== null ? round((float) $average, 1) : null;
-    }
-
-    /**
-     * @param  array<int, string>  $keys
-     * @return array<string, int>
-     */
-    private function integerCounts(?object $counts, array $keys): array
-    {
-        return collect($keys)->mapWithKeys(fn (string $key): array => [
-            $key => (int) ($counts?->{$key} ?? 0),
-        ])->all();
     }
 }
