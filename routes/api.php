@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\CleaningJobCategoryController;
 use App\Http\Controllers\Api\V1\CleaningJobPostController;
+use App\Http\Controllers\Api\V1\Employer\OverviewController as EmployerOverviewController;
 use App\Http\Controllers\Api\V1\JobApplicantController;
 use App\Http\Controllers\Api\V1\Moderation\ReportModerationController;
 use App\Http\Controllers\Api\V1\NotificationController;
@@ -103,6 +104,10 @@ Route::prefix('v1')->group(function (): void {
         Route::get('notifications', [NotificationController::class, 'index']);
         Route::patch('notifications/read-all', [NotificationController::class, 'markAllRead']);
         Route::patch('notifications/{notification}/read', [NotificationController::class, 'markRead']);
+
+        Route::prefix('employer')->middleware('role:employer')->group(function (): void {
+            Route::get('overview', [EmployerOverviewController::class, 'show']);
+        });
 
         // Filing a report is open to any authenticated user; working the queue
         // it feeds is not — that lives behind the moderator/admin group below.
